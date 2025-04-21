@@ -5,8 +5,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const starsElement = document.getElementById('stars');
   const rocketsContainer = document.getElementById('rockets-container');
   const mainContent = document.querySelector('.mein_content');
-  const meinContainer = mainContent.querySelector('.mein_container'); // Получаем ссылку на mein_container
-  const contentSvg = mainContent.querySelector('#content'); // Получаем ссылку на SVG внутри
+  const meinContainer = mainContent.querySelector('.mein_container');
+  const contentSvg = mainContent.querySelector('#content');
+  const body = document.body;
 
   let isDragging = false;
   let offsetX, offsetY;
@@ -36,14 +37,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (currentTime < 5000) {
       progress = Math.min(1, currentTime / animationDurationBeforeButton);
       currentY = startY + (intermediateY - startY) * progress;
-      // Ракета летит по центру по горизонтали до момента начала движения к кнопке
       currentX = startX;
       currentRotation = 180;
     } else {
       const elapsedTimeAfterButton = currentTime - 5000;
       progress = Math.min(1, elapsedTimeAfterButton / animationDurationAfterButton);
       currentY = intermediateY + (finalY - intermediateY) * progress;
-      // Плавное смещение по горизонтали и поворот
       currentX = startX + (targetX - startX) * progress;
       currentRotation = 180 + (finalRotationAngle - 180) * progress;
     }
@@ -135,30 +134,33 @@ document.addEventListener('DOMContentLoaded', () => {
       rocketsContainer.style.opacity = 0;
     }
 
-    // Стилизуем mein_container для рамки на весь экран с отступами и позиционируем SVG
     meinContainer.style.position = 'fixed';
-    meinContainer.style.top = '20px'; // Отступ сверху
-    meinContainer.style.left = '20px'; // Отступ слева
-    meinContainer.style.right = '20px'; // Отступ справа
-    meinContainer.style.bottom = '20px'; // Отступ снизу
+    meinContainer.style.top = '20px';
+    meinContainer.style.left = '20px';
+    meinContainer.style.right = '20px';
+    meinContainer.style.bottom = '20px';
     meinContainer.style.border = '2px solid red';
     meinContainer.style.borderRadius = '10px';
     meinContainer.style.display = 'flex';
     meinContainer.style.flexDirection = 'column';
-    meinContainer.style.alignItems = 'center'; // Центрируем по горизонтали
-    meinContainer.style.paddingTop = '40px'; // Добавляем отступ сверху для SVG
+    meinContainer.style.alignItems = 'center';
+    meinContainer.style.paddingTop = '40px';
 
-    // Позиционируем SVG контент сверху по центру
     contentSvg.style.position = 'absolute';
+    contentSvg.style.width = '300%'; // Например, уменьшаем ширину до 50% от родительского контейнера
+    contentSvg.style.height = 'auto'; // Сохраняем пропорции высоты
     contentSvg.style.top = '8%';
     contentSvg.style.left = '50%';
-    contentSvg.style.transform = 'translateX(-50%) translateY(-50%)'; // Центрируем SVG относительно верхнего края контейнера
+    contentSvg.style.transform = 'translateX(-50%) translateY(-50%)';
 
     mainContent.style.display = 'block';
     mainContent.style.opacity = 0;
     mainContent.style.transition = 'opacity 1s ease-in-out';
     setTimeout(() => {
       mainContent.style.opacity = 1;
+      body.style.backgroundImage = "url('fonts.png')"; // Устанавливаем фоновое изображение
+      body.style.backgroundSize = "cover";
+      body.style.backgroundPosition = "center";
 
       rocketElement.style.display = 'none';
       svgElement.style.display = 'none';
