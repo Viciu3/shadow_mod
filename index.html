@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>loader Shadow-Mod</title>
+  <link rel="stylesheet" href="test.css">
+  <link href="https://fonts.googleapis.com/css?family=Poppins" rel="stylesheet" type="text/css">
+  <style>
+    .rocket {
+      touch-action: pan-y pan-x;
+      cursor: grab;
+    }
+    .rocket:active {
+      cursor: grabbing;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div id="stars"></div>
+    <div id="rockets-container">
+      <div id="single-rocket" class="rocket">
+        <div class="rocket-wing-left"></div>
+        <div class="rocket-wing-right"></div>
+      </div>
+    </div>
+    <svg>
+      <text x="50%" y="70%" text-anchor="middle">Shadow-Mod</text>
+    </svg>
+    <button id="login-button">Войти</button>
+  </div>
+
+  <script src="test.js"></script>
+</body>
+</html>

@@ -1,0 +1,267 @@
+ * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  border: 0;
+  outline: 0;
+  text-decoration: none;
+  list-style: none;
+  text-transform: capitalize;
+  font-family: 'Poppins', sans-serif;
+  transition: all .3s;
+}
+
+html {
+  font-size: 62.5%;
+  overflow-x: hidden;
+}
+
+body {
+  background-color: #222;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+.container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+svg {
+  width: 80%;
+  max-width: 600px;
+  height: auto;
+}
+
+svg text {
+  font-size: calc(5vw + 3rem);
+  stroke: red;
+  stroke-width: 2;
+  animation: stroke 5s infinite alternate;
+}
+
+@keyframes stroke {
+  0% {
+    fill: rgba(255,255,255,0);
+    stroke: red;
+    stroke-dashoffset: 25%;
+    stroke-dasharray: 0 50%;
+    stroke-width: 2;
+  }
+  70% {
+    fill: rgba(255,255,255,0);
+    stroke: red;
+  }
+  80% {
+    fill: rgba(255,255,255,0);
+    stroke: red;
+    stroke-width: 3;
+  }
+  100% {
+    fill: red;
+    stroke: rgba(255,255,255,0);
+    stroke-dashoffset: -25%;
+    stroke-dasharray: 50% 0;
+    stroke-width: 0;
+  }
+}
+
+#login-button {
+  background-color: transparent;
+  color: white;
+  font-size: 2.5rem; /* Увеличили размер шрифта */
+  padding: 1rem 2.5rem; /* Увеличили внутренние отступы */
+  border: 3px solid red; /* Немного увеличили толщину рамки, чтобы соответствовать размеру */
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0;
+  left: calc(50% - -70px); /* Перемещаем на 50px влево от центра */
+  transform: translateY(20px);
+  animation: fadeInButton 0.5s ease-in-out forwards 5s,
+             strokeButton 5s infinite alternate;
+  margin-top: 2rem;
+  clip-path: polygon(
+    0% 30%,
+    10% 0%,
+    90% 0%,
+    100% 30%,
+    90% 70%,
+    100% 100%,
+    80% 85%,
+    20% 85%,
+    0% 100%,
+    10% 70%
+  );
+  transition: clip-path 0.3s ease-in-out;
+}
+
+#login-button:hover {
+  background-color: rgba(255, 0, 0, 0.1);
+}
+
+@keyframes fadeInButton {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes strokeButton {
+  0% {
+    box-shadow: inset 0 0 0 0 red;
+  }
+  70% {
+    box-shadow: inset 0 0 0 0 red;
+  }
+  80% {
+    box-shadow: inset 0 0 0 3px red; /* Увеличили толщину тени, чтобы соответствовать рамке */
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 rgba(255, 0, 0, 0);
+  }
+}
+
+#stars {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  animation: twinkle 5s linear infinite;
+  z-index: -1;
+}
+
+#stars::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300vw;
+  height: 300vh;
+  background: radial-gradient(circle, rgba(255, 0, 0, 0.2) 1px, transparent 1px),
+              radial-gradient(circle, rgba(255, 0, 0, 0.4) 2px, transparent 2px),
+              radial-gradient(circle, rgba(255, 0, 0, 0.6) 1px, transparent 1px),
+              radial-gradient(circle, rgba(255, 0, 0, 0.8) 2px, transparent 2px);
+  background-size: 60px 60px, 100px 100px, 70px 70px, 150px 150px;
+  animation: moveStars 5s linear infinite;
+}
+
+#rockets-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#single-rocket {
+  position: absolute;
+  top: -225%; /* Начинаем сверху экрана */
+  left: 50%;
+  transform: translateX(-50%) rotate(180deg); /* Добавлено вращение на 180 градусов */
+  width: 25px;
+  height: 60px;
+  background-color: white;
+  border-radius: 50% 50% 10% 10%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: grab;
+}
+
+#single-rocket:active {
+  cursor: grabbing;
+}
+
+#single-rocket::before {
+  content: '';
+  position: absolute;
+  bottom: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 12px solid white;
+}
+
+#single-rocket::after {
+  content: '';
+  position: absolute;
+  bottom: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 25px solid red; /* Rocket fire */
+  animation: rocketFire 0.2s infinite alternate;
+}
+
+@keyframes rocketFire {
+  from { border-top-color: red; height: 20px; }
+  to { border-top-color: orangered; height: 15px; }
+}
+
+.rocket-wing-left {
+  position: absolute;
+  top: 60%;
+  left: -5px;
+  width: 15px;
+  height: 5px;
+  background-color: lightgray;
+  transform: rotate(-30deg);
+  border-radius: 2px;
+}
+
+.rocket-wing-right {
+  position: absolute;
+  top: 60%;
+  right: -5px;
+  width: 15px;
+  height: 5px;
+  background-color: lightgray;
+  transform: rotate(30deg);
+  border-radius: 2px;
+}
+
+@keyframes flyRocketPath {
+  0% {
+    transform: translate(-50%, -100%) rotate(0deg); /* Начало сверху */
+  }
+  16.66% {
+    transform: translate(calc(50% - 50px), 20%) rotate(-15deg); /* S */
+  }
+  33.33% {
+    transform: translate(calc(50% + 50px), 40%) rotate(15deg); /* H */
+  }
+  50% {
+    transform: translate(calc(50% - 30px), 60%) rotate(-10deg); /* A */
+  }
+  66.66% {
+    transform: translate(calc(50% + 20px), 80%) rotate(10deg); /* D */
+  }
+  83.33% {
+    transform: translate(calc(50% - 40px), 100%) rotate(-5deg); /* O */
+  }
+  100% {
+    transform: translate(calc(50% + 0px), 120%) rotate(0deg); /* W (ниже текста) */
+  }
+}
