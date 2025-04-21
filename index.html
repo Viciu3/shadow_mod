@@ -14,6 +14,33 @@
     .rocket:active {
       cursor: grabbing;
     }
+
+    #login-button-container {
+      position: relative;
+    }
+
+    .glowing-border-on-click {
+      position: absolute;
+      top: -20px;
+      left: -20px;
+      right: -20px;
+      bottom: -20px;
+      border: 2px solid red;
+      border-radius: 5px;
+      opacity: 0;
+      transition: opacity 0.5s ease-in-out;
+      pointer-events: none; /* Чтобы не мешала кликам */
+    }
+
+    .glowing-border-on-click.show {
+      opacity: 1;
+    }
+
+    .mein_container {
+      border: 2px solid red;
+      border-radius: 10px;
+      padding: 20px; /* Добавьте немного внутреннего отступа, если нужно */
+    }
   </style>
 </head>
 <body>
@@ -28,9 +55,22 @@
     </div>
     <svg>
       <text x="50%" y="50%" text-anchor="middle">Shadow</text>
-      <text x="50%" y="95%" text-anchor="middle">mod</text>
+      <text x="50%" y="90%" text-anchor="middle">mod</text>
     </svg>
-    <button id="login-button">Войти</button>
+    <div id="login-button-container">
+      <button id="login-button">Войти</button>
+      <div class="glowing-border-on-click"></div>
+    </div>
+  </div>
+
+  <div class="mein_content" style="display: none;">
+    <div class="mein_container">
+      <section class="mein_content_1">
+        <svg id="content">
+          <text id="content" x="50%" y="50%" text-anchor="middle">Shadow Mod...</text>
+        </svg>
+      </section>
+    </div>
   </div>
 
   <script src="test.js"></script>
