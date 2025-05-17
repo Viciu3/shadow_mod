@@ -1,17 +1,17 @@
-__version__ = (7, 7, 9)         
+__version__ = (7, 8, 0)
 # meta developer: @Shadow_red1, @familiarrrrrr
 #         ╭══• ೋ•✧๑♡๑✧•ೋ •══╮
 #                  @Yaukais
-#               ╔══╗╔╗ ♡ ♡ ♡  
+#               ╔══╗╔╗ ♡ ♡ ♡
 #               ╚╗╔╝║║╔═╦╦╦╔╗
-#               ╔╝╚╗║╚╣║║║║╔╣  
-#               ╚══╝╚═╩═╩═╩═╝     
+#               ╔╝╚╗║║╔═╦╦╦╔╗
+#               ╚══╝╚═╩═╩═╩═╝
 #                   ╔═══╗♪
 #                   ║███║ ♫
 #                   ║(●)║♫
 #                   ╚═══╝ ♪
 #              ஜ۞ஜ YOU ஜ۞ஜ
-#              ➺𒋨M𝙀Ƭ𝙄Ө𝙍𒆙➤
+#              ➺𒋨M𝙀Ƭ𝙄ӨR𒆙➤
 #         ╰══• ೋ•✧๑♡๑✧•ೋ •══╯
 
 from telethon import events
@@ -19,8 +19,8 @@ from .. import loader, utils
 import asyncio
 
 @loader.tds
-class Room_ghost(loader.Module):
-    """Автокомнаты от Тени! @familiarrrrrr | настройка в кфг.)"""
+class Ghostroom(loader.Module):
+    """Автокомнаты от Тени! @familiarrrrrr | настройка в кфг."""
 
     strings = {"name": "Ghost-room"}
 
@@ -29,7 +29,7 @@ class Room_ghost(loader.Module):
             loader.ConfigValue(
                 "button_row_index",
                 0,
-                "Индекс строки кнопок (0 - первая строка, 1 - вторая)",
+                "Индекс строки кнопки (0 - первая строка, 1 - вторая)",
                 validator=loader.validators.Integer(),
             ),
             loader.ConfigValue(
@@ -39,36 +39,45 @@ class Room_ghost(loader.Module):
                 validator=loader.validators.Integer(),
             ),
             loader.ConfigValue(
-                "BFGB_name",
-                None,
-                "Игровое имя в боте @bfgbunker_bot",
-                validator=loader.validators.String(),
-            ),
-            loader.ConfigValue(
                 "target_chat_id",
                 5813222348,
-                "ID чата, в который будут отправляться сообщения о починке бункера.",
+                "ID чата, в который будет отправляться сообщение 'Починить бункер'.",
                 validator=loader.validators.Integer(),
             ),
         )
-        self.trigger_active = False
+        self.clicker_active = asyncio.Event()
 
     async def ghostoncmd(self, message):
-        """Используйте .ghoston <интервал в секундах> для начала кликов."""
+        """Используйте .ghoston <задержка_кнопки> <задержка_сообщения> для раздельной настройки задержек.
+        Если указано одно значение, оно будет использовано для обеих задержек."""
         if not message.is_reply:
             await message.edit('<b>Нету реплая.</b>')
             return
 
-        args = utils.get_args_raw(message)
-        try:
-            interval = float(args)
-        except ValueError:
-            interval = 1.5
-        
-        self.clicker = True
-        await message.edit(f'<b><blockquote><emoji document_id=5873127366485610469>😈</emoji> Ghost-room <emoji document_id=5444900804743939405>🤩</emoji> включён.<emoji document_id=5785243749969825324>👻</emoji>\n\n<emoji document_id=5215484787325676090>🕐</emoji> Интервал: {interval} секунд.<emoji document_id=5341649649214182916>🥰</emoji></blockquote></b>')
-        
-        while self.clicker:
+        args = utils.get_args_raw(message).split()
+        if len(args) == 1:
+            try:
+                delay = float(args[0])
+                button_interval = delay
+                message_interval = delay
+            except ValueError:
+                await message.edit('<b>⚠️ Неправильный формат задержки. Укажите одно или два числа.</b>')
+                return
+        elif len(args) == 2:
+            try:
+                button_interval = float(args[0])
+                message_interval = float(args[1])
+            except ValueError:
+                await message.edit('<b>⚠️ Неправильный формат задержек. Укажите два числа через пробел.</b>')
+                return
+        else:
+            await message.edit('<b>⚠️ Неправильное количество аргументов. Укажите одну или две задержки.</b>')
+            return
+
+        self.clicker_active.set()
+        await message.edit(f'<b><blockquote><emoji document_id=5873127366485610469>😈</emoji> Ghost-room включён.<emoji document_id=5444900804743939405>🤩</emoji>\n\n<emoji document_id=5215484787325676090>🕐</emoji> КД кнопки: {button_interval} секунд.\n<emoji document_id=5215484787325676090>🕐</emoji> КД сообщения: {message_interval} секунд.</blockquote></b>')
+
+        while self.clicker_active.is_set():
             reply = await message.get_reply_message()
             if reply and reply.buttons:
                 row_index = self.config["button_row_index"]
@@ -77,64 +86,46 @@ class Room_ghost(loader.Module):
                 if row_index < len(reply.buttons) and column_index < len(reply.buttons[row_index]):
                     button = reply.buttons[row_index][column_index]
                     await button.click()
-                    await asyncio.sleep(interval)
+                    await asyncio.sleep(button_interval)
+
+                    target_chat_id = self.config["target_chat_id"]
+                    await self.client.send_message(target_chat_id, "Починить бункер")
+                    await asyncio.sleep(message_interval)
                 else:
-                    await message.edit('<b>Указанный индекс кнопки вне диапазона.</b>')
-                    self.clicker = False
+                    await message.edit('<b>⚠️ В сообщении нет инлайн кнопок для нажатия.</b>')
+                    self.clicker_active.clear()
                     break
             else:
                 await message.edit('<b>В сообщении нет инлайн кнопок для нажатия.</b>')
-                self.clicker = False
+                self.clicker_active.clear()
                 break
+
+        await message.edit(f'<b><blockquote><emoji document_id=5873127366485610469>😈</emoji> Ghost-room выключен.<emoji document_id=5444900804743939405>🤩</emoji></blockquote></b>')
 
     async def ghostoffcmd(self, message):
         """Используйте .ghostoff для остановки кликера."""
-        self.clicker = False
-        await message.edit('<b><blockquote><emoji document_id=5873127366485610469>😈</emoji> Ghost-room <emoji document_id=5444900804743939405>🤩</emoji> выключен.<emoji document_id=5785243749969825324>👻</emoji></blockquote></b>')
+        self.clicker_active.clear()
+        await message.edit('<b><blockquote><emoji document_id=5873127366485610469>😈</emoji> Ghost-room выключен.<emoji document_id=5444900804743939405>🤩</emoji></blockquote></b>')
 
     async def ghostinfocmd(self, message):
-        """Используйте .ghostinfo для получения информации о режимах и интервалах также комбинацыи нажатия."""
+        """Используйте .ghostinfo для получения информации о режимах и комбинациях нажатия."""
         info_message = (
             "[row] [column] кфг настройка!\n"
             "[ 0 ] [ 0 ] это режим за кр.\n"
             "[ 0 ] [ 1 ] это режим за бут.\n"
-            "[ 1 ] [ 0 ] это +1 интервал 1s\n"
-            "[ 1 ] [ 1 ] это +5 интервал 1s\n"
+            "[ 1 ] [ 0 ] это +1 интервал 1.5s\n"
+            "[ 1 ] [ 1 ] это +5 интервал 1.5s\n"
             "[ 2 ] [ 0 ] это +20 интервал 60s\n"
             "[ 2 ] [ 1 ] это +100 интервал 120s\n"
             "[ 3 ] [ 0 ] это +1000 интервал 180s\n"
-            "[ 4 ] [ 0 ] это +5000 интервал 180s"
+            "[ 4 ] [ 0 ] это +5000 интервал 180s\n\n"
+            "Кд для клик и смс в сикундах:\n"
+            "• Клик - 1.5s; 60s; 120s; 180s.\n"
+            "• Смс - 1.5s; 60s; 120s; 180s.\n\n"
+            "Как правильно запустить прокачку:\n"
+            "• Теперь доступно 2 вида ввода:\n"
+            "1 .ghoston 60 ( кд клик 60s, кд смс 60s)\n"
+            "2 .ghoston 120 180 (кд клик 120s кд смс 180s\n"
+            "Таким образом можно теперь запускать прокачку"
         )
         await message.edit(info_message)
-
-    async def client_ready(self, client, db):
-        self.db = db
-        self.client = client
-
-        @self.client.on(events.NewMessage(from_users='@bfgbunker_bot'))
-        async def trigger_handler(event):
-            bfgb_name = self.config["BFGB_name"]
-            
-            if not bfgb_name:
-                # Отправляем сообщение в указанный чат
-                target_chat_id = self.config["target_chat_id"]
-                await self.client.send_message(target_chat_id, "Параметр 'Игровое имя' не настроен. Пожалуйста, настройте его перед запуском.")
-                return
-
-            if f"{bfgb_name}, в бункере произошёл пожар" in event.raw_text or f"{bfgb_name}, в бункере произошёл потоп" in event.raw_text:
-                if not self.trigger_active:
-                    self.trigger_active = True
-                    
-                    # Отправляем сообщение в указанный чат
-                    target_chat_id = self.config["target_chat_id"]
-                    await self.client.send_message(target_chat_id, "Починить бункер")
-
-                    for _ in range(3):
-                        await asyncio.sleep(3)
-
-                    response = await self.client.wait_for(
-                        events.NewMessage(from_users='@bfgbunker_bot'),
-                        timeout=30
-                    )
-                    if f"{bfgb_name}, ты успешно исправил(-а) происшествие" in response.raw_text:
-                        self.trigger_active = False
