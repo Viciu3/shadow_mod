@@ -1,5 +1,5 @@
 ![Баннер InfoBMod](banner.png)
-# shadow_mod - ето репозиторий для хранения модов для userbota.
+# shadow_mod - ето репозиторий для хранения модов для userbota. https://viciu3.github.io/shadow_mod/
 # тут вы сможете найти:
 
 * Модификации для автоматизации ботов
