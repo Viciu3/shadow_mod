@@ -1,5 +1,5 @@
 __version__ = (8, 1, 3)
-# meta developer: @Shadow_red1, @dream23041
+# meta developer: @shadow_mod777, @Shadow_red1, @dream23041
 # change-log: Тестирование обновление модуля!
 
 from .. import loader, utils
