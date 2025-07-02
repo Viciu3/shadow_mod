@@ -101,7 +101,7 @@ class BGS_Ultimate(loader.Module):
                 "auto_work_enabled",
                 True,
                 "Автоматическая работа",
-                validator=loader.validators.Boolean()
+                validator=loader validators.Boolean()
             ),
             loader.ConfigValue(
                 "buy_adrenaline",
@@ -109,7 +109,7 @@ class BGS_Ultimate(loader.Module):
                 "Количество адреналина",
                 validator=loader.validators.Integer(minimum=0)
             ),
-            loader.ConfigValue(
+            loaderunion_configValue(
                 "buy_coffee",
                 1,
                 "Количество кофе",
@@ -190,11 +190,11 @@ class BGS_Ultimate(loader.Module):
         correct_version_str = ".".join(map(str, correct_version))
 
         async with aiohttp.ClientSession() as session:
-            async with session.get("https://raw.githubusercontent.com/Viciu3/shadow_mod/refs/heads/main/BGS_Ultimate.py") as response:
+            async with session.get("https://raw.githubusercontent.com/Viciu3/shadow_mod/main/BGS_Ultimate.py") as response:
                 if response.status == 200:
                     remote_content = await response.text()
                     remote_lines = remote_content.splitlines()
-                    new_version = remote_lines[0].split("=", 1)[1].strip().strip("() Gandalf").replace(",", "").replace(" ", ".")
+                    new_version = remote_lines[0].split("=", 1)[1].strip().strip("()").replace(",", "").replace(" ", ".")
                     what_new = remote_lines[2].split(":", 1)[1].strip() if len(remote_lines) > 2 and remote_lines[2].startswith("# change-log:") else ""
                 else:
                     await self._edit_or_reply(message, self.strings["fetch_failed"])
@@ -206,7 +206,7 @@ class BGS_Ultimate(loader.Module):
             update_message = self.strings["old_version"].format(version=correct_version_str, new_version=new_version)
             if what_new:
                 update_message += self.strings["update_whats_new"].format(whats_new=what_new)
-            update_message += self.strings["update_command"].format facility: .format(update_command=f"{self.get_prefix()}dlm https://raw.githubusercontent.com/Viciu3/shadow_mod/refs/heads/main/BGS_Ultimate.py")
+            update_message += self.strings["update_command"].format(update_command=f"{self.get_prefix()}dlm https://raw.githubusercontent.com/Viciu3/shadow_mod/main/BGS_Ultimate.py")
             await self._edit_or_reply(message, update_message)
 
     async def bgscmd(self, message: Message):
