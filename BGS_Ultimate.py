@@ -1,6 +1,6 @@
 __version__ = (8, 1, 2)
 # meta developer: @Shadow_red1, @dream23041
-# change-log: Добавлена проверка обновлений через GitHub
+# change-log: Исправлены синтаксические ошибки в конфигурации и добавлена проверка обновлений
 
 from .. import loader, utils
 import asyncio
@@ -101,7 +101,7 @@ class BGS_Ultimate(loader.Module):
                 "auto_work_enabled",
                 True,
                 "Автоматическая работа",
-                validator=loader validators.Boolean()
+                validator=loader.validators.Boolean()
             ),
             loader.ConfigValue(
                 "buy_adrenaline",
@@ -109,7 +109,7 @@ class BGS_Ultimate(loader.Module):
                 "Количество адреналина",
                 validator=loader.validators.Integer(minimum=0)
             ),
-            loaderunion_configValue(
+            loader.ConfigValue(
                 "buy_coffee",
                 1,
                 "Количество кофе",
