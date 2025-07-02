@@ -1,6 +1,6 @@
-__version__ = (8, 1, 2)
+__version__ = (8, 1, 3)
 # meta developer: @Shadow_red1, @dream23041
-# change-log: Исправлены синтаксические ошибки в конфигурации и добавлена проверка обновлений
+# change-log: Тестирование обновление модуля!
 
 from .. import loader, utils
 import asyncio
