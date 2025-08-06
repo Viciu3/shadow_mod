@@ -19,7 +19,7 @@ from .. import loader, utils
 import asyncio
 
 @loader.tds
-class Ghostroom(loader.Module):
+class GhostRoom(loader.Module):
     """Автокомнаты от Тени! @familiarrrrrr | настройка в кфг."""
 
     strings = {"name": "Ghost-room"}
