@@ -13,6 +13,8 @@ class ShadowUltimatCore:
         self.bot = bot
         self.config = config
         self.strings = strings  # Получаем strings из ShadowUltimat
+        self._pause_event = asyncio.Event()  # Событие для паузы автофарма
+        self._pause_event.set()  # Изначально автофарм не приостановлен
         self._resources_map = {
             range(0, 501): "картошка",
             range(501, 2001): "морковь",
@@ -40,6 +42,7 @@ class ShadowUltimatCore:
         default_data = {
             "greenhouse_active": True,
             "greenhouse_manual_stop": False,  # Флаг ручного выключения
+            "greenhouse_paused": False,  # Флаг паузы для команд
             "experience": 0,
             "water": 0,
             "current_resource": "картошка",
@@ -85,6 +88,11 @@ class ShadowUltimatCore:
     async def _greenhouse(self, client):
         """Автофарм теплицы с ожиданием воды и автоматическим включением"""
         while self._get_data("greenhouse_active", True):
+            # Проверяем, приостановлен ли автофарм
+            if self._get_data("greenhouse_paused", False):
+                logger.debug("Автофарм приостановлен, ожидаем возобновления")
+                await self._pause_event.wait()
+
             async with client.conversation(self.bot) as conv:
                 # Проверяем состояние теплицы
                 await conv.send_message("Моя теплица")
@@ -92,6 +100,9 @@ class ShadowUltimatCore:
                     response = await asyncio.wait_for(conv.get_response(), timeout=5)
                 except asyncio.TimeoutError:
                     logger.error("Таймаут при получении данных теплицы")
+                    continue
+                except Exception as e:
+                    logger.error(f"Ошибка при получении ответа теплицы: {e}")
                     continue
 
                 text = response.raw_text
@@ -191,6 +202,9 @@ class ShadowUltimatCore:
                 except asyncio.TimeoutError:
                     logger.error("Таймаут при выращивании культуры")
                     continue
+                except Exception as e:
+                    logger.error(f"Ошибка при выращивании культуры: {e}")
+                    continue
 
                 if "успешно вырастил(-а)" in response.raw_text:
                     water -= 1
@@ -211,7 +225,7 @@ class ShadowUltimatCore:
                     logger.info(f"Вода обновлена: {water}, автофарм возобновлён")
                     continue
 
-                await asyncio.sleep(5)
+                await asyncio.sleep(2)  # Задержка между циклами
 
         return False
 
