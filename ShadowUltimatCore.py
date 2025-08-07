@@ -36,7 +36,7 @@ class ShadowUltimatCore:
         self._init_data()
 
     def _init_data(self):
-        """Инициализация JSON-файла"""
+        """Инициализация JSON-файла с начальными данными"""
         default_data = {
             "greenhouse_active": True,
             "experience": 0,
@@ -82,7 +82,7 @@ class ShadowUltimatCore:
         self._save_data(data)
 
     async def _greenhouse(self, client):
-        """Автофарм теплицы"""
+        """Автофарм теплицы с ожиданием воды"""
         while self._get_data("greenhouse_active", True):
             async with client.conversation(self.bot) as conv:
                 # Проверяем состояние теплицы
@@ -94,6 +94,7 @@ class ShadowUltimatCore:
                     continue
 
                 text = response.raw_text
+                # Парсим опыт, воду и текущую культуру
                 green_exp = re.search(r"Опыт: (\d+)", text)
                 water = re.search(r"Вода: (\d+)/\d+ л\.", text)
                 resource_match = re.search(r"🪴 Тебе доступна: (.+?)(?=\n|$)", text)
@@ -167,11 +168,17 @@ class ShadowUltimatCore:
                 self._set_data("current_resource", resource)
                 self._set_data("warehouse", warehouse)
 
-                # Если воды 0, останавливаем автофарм
+                # Если воды 0, ждём 10 минут для накопления 1 капли
                 if water == 0:
-                    self._set_data("greenhouse_active", False)
-                    logger.info("Автофарм теплицы остановлен: вода закончилась")
-                    break
+                    logger.info("Вода закончилась, ожидание 10 минут для накопления 1 капли")
+                    await asyncio.sleep(600)  # 10 минут = 600 секунд
+                    if not self._get_data("greenhouse_active", True):
+                        logger.info("Автофарм теплицы отключён во время ожидания")
+                        break
+                    water += 1  # Предполагаем, что 1 капля накопилась
+                    self._set_data("water", water)
+                    logger.info(f"Вода обновлена: {water}")
+                    continue
 
                 # Выращиваем культуру (без эмодзи)
                 await asyncio.sleep(1.5)
@@ -187,10 +194,17 @@ class ShadowUltimatCore:
                     warehouse[resource_key] += 1
                     self._set_data("warehouse", warehouse)
                     self._set_data("water", water)
+                    logger.info(f"Выращена {resource}, вода: {water}, склад: {warehouse[resource_key]}")
                 elif "у тебя не хватает" in response.raw_text:
-                    logger.info("Недостаточно воды или ресурсов, автофарм остановлен")
-                    self._set_data("greenhouse_active", False)
-                    break
+                    logger.info("Недостаточно воды или ресурсов, ожидание 10 минут для накопления 1 капли")
+                    await asyncio.sleep(600)  # 10 минут = 600 секунд
+                    if not self._get_data("greenhouse_active", True):
+                        logger.info("Автофарм теплицы отключён во время ожидания")
+                        break
+                    water += 1  # Предполагаем, что 1 капля накопилась
+                    self._set_data("water", water)
+                    logger.info(f"Вода обновлена: {water}")
+                    continue
 
                 await asyncio.sleep(5)
 
