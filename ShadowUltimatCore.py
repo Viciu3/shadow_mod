@@ -9,9 +9,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 class ShadowUltimatCore:
-    def __init__(self, bot, config):
+    def __init__(self, bot, config, strings):
         self.bot = bot
         self.config = config
+        self.strings = strings  # Получаем strings из ShadowUltimat
         self._resources_map = {
             range(0, 501): "картошка",
             range(501, 2001): "морковь",
@@ -131,7 +132,13 @@ class ShadowUltimatCore:
                         break
 
                 warehouse = self._get_data("warehouse", {
-                    "potato": 0, "carrot": 0, "rice": 0, "beet": 0, "cucumber": 0, "bean": 0, "tomato": 0
+                    "potato": 0,
+                    "carrot": 0,
+                    "rice": 0,
+                    "beet": 0,
+                    "cucumber": 0,
+                    "bean": 0,
+                    "tomato": 0
                 })
 
                 # Парсинг склада
@@ -202,24 +209,20 @@ class ShadowUltimatCore:
 
     def get_vip_status(self, text, is_premium):
         """Определение VIP-статуса"""
-        from ShadowUltimat import ShadowUltimat
-        strings = ShadowUltimat.strings
         if "⭐️⭐️⭐️VIP4⭐️⭐️⭐️" in text:
-            return strings["vip4_premium" if is_premium else "vip4"]
+            return self.strings["vip4_premium" if is_premium else "vip4"]
         elif "💎💎💎VIP3💎💎💎" in text:
-            return strings["vip3_premium" if is_premium else "vip3"]
+            return self.strings["vip3_premium" if is_premium else "vip3"]
         elif re.search(r"🔥🔥🔥?VIP2🔥🔥🔥?", text):
-            return strings["vip2_premium" if is_premium else "vip2"]
+            return self.strings["vip2_premium" if is_premium else "vip2"]
         elif "⚡️VIP1⚡️" in text:
-            return strings["vip1_premium" if is_premium else "vip1"]
+            return self.strings["vip1_premium" if is_premium else "vip1"]
         return ""
 
     def get_admin_status(self, text, is_premium):
         """Определение статуса админа"""
-        from ShadowUltimat import ShadowUltimat
-        strings = ShadowUltimat.strings
         if "💻 Тех. Администратор 💻" in text:
-            return strings["admin_tech_premium" if is_premium else "admin_tech"]
+            return self.strings["admin_tech_premium" if is_premium else "admin_tech"]
         elif "😈 Администратор оф.чата 😈" in text:
-            return strings["admin_chat_premium" if is_premium else "admin_chat"]
+            return self.strings["admin_chat_premium" if is_premium else "admin_chat"]
         return ""
