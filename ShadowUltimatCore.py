@@ -4,6 +4,7 @@ import pathlib
 import re
 import asyncio
 import logging
+from hikkatl.errors import TelegramRetryAfter
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -93,139 +94,153 @@ class ShadowUltimatCore:
                 logger.debug("Автофарм приостановлен, ожидаем возобновления")
                 await self._pause_event.wait()
 
-            async with client.conversation(self.bot) as conv:
-                # Проверяем состояние теплицы
-                await conv.send_message("Моя теплица")
-                try:
-                    response = await asyncio.wait_for(conv.get_response(), timeout=5)
-                except asyncio.TimeoutError:
-                    logger.error("Таймаут при получении данных теплицы")
-                    continue
-                except Exception as e:
-                    logger.error(f"Ошибка при получении ответа теплицы: {e}")
-                    continue
+            try:
+                async with client.conversation(self.bot) as conv:
+                    # Проверяем состояние теплицы
+                    await conv.send_message("Моя теплица")
+                    try:
+                        response = await asyncio.wait_for(conv.get_response(), timeout=5)
+                    except TelegramRetryAfter as e:
+                        logger.warning(f"Флуд-контроль Telegram: ждём {e.retry_after} секунд")
+                        await asyncio.sleep(e.retry_after)
+                        continue
+                    except asyncio.TimeoutError:
+                        logger.error("Таймаут при получении данных теплицы")
+                        await asyncio.sleep(5)  # Задержка перед повтором
+                        continue
+                    except Exception as e:
+                        logger.error(f"Ошибка при получении ответа теплицы: {e}")
+                        await asyncio.sleep(5)  # Задержка перед повтором
+                        continue
 
-                text = response.raw_text
-                # Парсим данные: опыт, вода, доступная культура, склад
-                green_exp = re.search(r"Опыт: (\d+)", text)  # Опыт теплицы
-                water = re.search(r"Вода: (\d+)/\d+ л\.", text)  # Текущая вода
-                resource_match = re.search(r"🪴 Тебе доступна: (.+?)(?=\n|$)", text)  # Доступная культура
-                warehouse_match = re.search(r"📦 Твой склад:([\s\S]*?)(?=\n\n|\Z)", text)  # Склад
+                    text = response.raw_text
+                    # Парсим данные: опыт, вода, доступная культура, склад
+                    green_exp = re.search(r"Опыт: (\d+)", text)  # Опыт теплицы
+                    water = re.search(r"Вода: (\d+)/\d+ л\.", text)  # Текущая вода
+                    resource_match = re.search(r"🪴 Тебе доступна: (.+?)(?=\n|$)", text)  # Доступная культура
+                    warehouse_match = re.search(r"📦 Твой склад:([\s\S]*?)(?=\n\n|\Z)", text)  # Склад
 
-                if not (green_exp and water and resource_match):
-                    logger.error(f"Не удалось разобрать данные теплицы: {text}")
-                    continue
+                    if not (green_exp and water and resource_match):
+                        logger.error(f"Не удалось разобрать данные теплицы: {text}")
+                        await asyncio.sleep(5)  # Задержка перед повтором
+                        continue
 
-                green_exp = int(green_exp.group(1))
-                water = int(water.group(1))
-                resource = resource_match.group(1).strip()
-                resource_key = {
-                    "🥔 Картошка": "potato",
-                    "🥕 Морковь": "carrot",
-                    "🍚 Рис": "rice",
-                    "🍠 Свекла": "beet",
-                    "🥒 Огурец": "cucumber",
-                    "🫘 Фасоль": "bean",
-                    "🍅 Помидор": "tomato"
-                }.get(resource, "potato")
+                    green_exp = int(green_exp.group(1))
+                    water = int(water.group(1))
+                    resource = resource_match.group(1).strip()
+                    resource_key = {
+                        "🥔 Картошка": "potato",
+                        "🥕 Морковь": "carrot",
+                        "🍚 Рис": "rice",
+                        "🍠 Свекла": "beet",
+                        "🥒 Огурец": "cucumber",
+                        "🫘 Фасоль": "bean",
+                        "🍅 Помидор": "tomato"
+                    }.get(resource, "potato")
 
-                # Проверка соответствия культуры опыту
-                for exp_range, res in self._resources_map.items():
-                    if green_exp in exp_range:
-                        resource = res
-                        resource_key = {
-                            "картошка": "potato",
-                            "морковь": "carrot",
-                            "рис": "rice",
-                            "свекла": "beet",
-                            "огурец": "cucumber",
-                            "фасоль": "bean",
-                            "помидор": "tomato"
-                        }.get(resource, "potato")
-                        break
+                    # Проверка соответствия культуры опыту
+                    for exp_range, res in self._resources_map.items():
+                        if green_exp in exp_range:
+                            resource = res
+                            resource_key = {
+                                "картошка": "potato",
+                                "морковь": "carrot",
+                                "рис": "rice",
+                                "свекла": "beet",
+                                "огурец": "cucumber",
+                                "фасоль": "bean",
+                                "помидор": "tomato"
+                            }.get(resource, "potato")
+                            break
 
-                warehouse = self._get_data("warehouse", {
-                    "potato": 0,
-                    "carrot": 0,
-                    "rice": 0,
-                    "beet": 0,
-                    "cucumber": 0,
-                    "bean": 0,
-                    "tomato": 0
-                })
+                    warehouse = self._get_data("warehouse", {
+                        "potato": 0,
+                        "carrot": 0,
+                        "rice": 0,
+                        "beet": 0,
+                        "cucumber": 0,
+                        "bean": 0,
+                        "tomato": 0
+                    })
 
-                # Парсинг склада
-                if warehouse_match:
-                    warehouse_lines = warehouse_match.group(1).strip().split("\n")
-                    for line in warehouse_lines:
-                        match = re.match(r"\s*(.+?) - (\d+) шт\.", line)
-                        if match:
-                            item = match.group(1).strip()
-                            amount = int(match.group(2))
-                            item_key = {
-                                "🥔 Картошка": "potato",
-                                "🥕 Морковь": "carrot",
-                                "🍚 Рис": "rice",
-                                "🍠 Свекла": "beet",
-                                "🥒 Огурец": "cucumber",
-                                "🫘 Фасоль": "bean",
-                                "🍅 Помидор": "tomato"
-                            }.get(item)
-                            if item_key:
-                                warehouse[item_key] = amount
+                    # Парсинг склада
+                    if warehouse_match:
+                        warehouse_lines = warehouse_match.group(1).strip().split("\n")
+                        for line in warehouse_lines:
+                            match = re.match(r"\s*(.+?) - (\d+) шт\.", line)
+                            if match:
+                                item = match.group(1).strip()
+                                amount = int(match.group(2))
+                                item_key = {
+                                    "🥔 Картошка": "potato",
+                                    "🥕 Морковь": "carrot",
+                                    "🍚 Рис": "rice",
+                                    "🍠 Свекла": "beet",
+                                    "🥒 Огурец": "cucumber",
+                                    "🫘 Фасоль": "bean",
+                                    "🍅 Помидор": "tomato"
+                                }.get(item)
+                                if item_key:
+                                    warehouse[item_key] = amount
 
-                # Обновляем JSON
-                self._set_data("experience", green_exp)
-                self._set_data("water", water)
-                self._set_data("current_resource", resource)
-                self._set_data("warehouse", warehouse)
-
-                # Если воды 0, ждём 10 минут и проверяем ручное выключение
-                if water == 0:
-                    logger.info("Вода закончилась, ожидание 10 минут для накопления 1 капли")
-                    self._set_data("greenhouse_active", False)  # Временно отключаем
-                    await asyncio.sleep(600)  # 10 минут = 600 секунд
-                    if self._get_data("greenhouse_manual_stop", False):
-                        logger.info("Автофарм остаётся выключенным из-за ручного управления")
-                        break
-                    water += 1  # Предполагаем, что 1 капля накопилась
+                    # Обновляем JSON
+                    self._set_data("experience", green_exp)
                     self._set_data("water", water)
-                    self._set_data("greenhouse_active", True)  # Автоматически включаем
-                    logger.info(f"Вода обновлена: {water}, автофарм возобновлён")
-                    continue
-
-                # Выращиваем культуру (без эмодзи)
-                await asyncio.sleep(1.5)
-                await conv.send_message(f"вырастить {resource}")
-                try:
-                    response = await asyncio.wait_for(conv.get_response(), timeout=5)
-                except asyncio.TimeoutError:
-                    logger.error("Таймаут при выращивании культуры")
-                    continue
-                except Exception as e:
-                    logger.error(f"Ошибка при выращивании культуры: {e}")
-                    continue
-
-                if "успешно вырастил(-а)" in response.raw_text:
-                    water -= 1
-                    warehouse[resource_key] += 1
+                    self._set_data("current_resource", resource)
                     self._set_data("warehouse", warehouse)
-                    self._set_data("water", water)
-                    logger.info(f"Выращена {resource}, вода: {water}, склад: {warehouse[resource_key]}")
-                elif "у тебя не хватает" in response.raw_text:
-                    logger.info("Недостаточно воды или ресурсов, ожидание 10 минут для накопления 1 капли")
-                    self._set_data("greenhouse_active", False)  # Временно отключаем
-                    await asyncio.sleep(600)  # 10 минут = 600 секунд
-                    if self._get_data("greenhouse_manual_stop", False):
-                        logger.info("Автофарм остаётся выключенным из-за ручного управления")
-                        break
-                    water += 1  # Предполагаем, что 1 капля накопилась
-                    self._set_data("water", water)
-                    self._set_data("greenhouse_active", True)  # Автоматически включаем
-                    logger.info(f"Вода обновлена: {water}, автофарм возобновлён")
-                    continue
 
-                await asyncio.sleep(2)  # Задержка между циклами
+                    # Если воды 0, ждём 10 минут и проверяем ручное выключение
+                    if water == 0:
+                        logger.info("Вода закончилась, ожидание 10 минут для накопления 1 капли")
+                        self._set_data("greenhouse_active", False)  # Временно отключаем
+                        await asyncio.sleep(600)  # 10 минут = 600 секунд
+                        if self._get_data("greenhouse_manual_stop", False):
+                            logger.info("Автофарм остаётся выключенным из-за ручного управления")
+                            break
+                        water += 1  # Предполагаем, что 1 капля накопилась
+                        self._set_data("water", water)
+                        self._set_data("greenhouse_active", True)  # Автоматически включаем
+                        logger.info(f"Вода обновлена: {water}, автофарм возобновлён")
+                        continue
+
+                    # Выращиваем культуру (без эмодзи)
+                    await asyncio.sleep(3)  # Увеличена задержка до 3 секунд
+                    await conv.send_message(f"вырастить {resource}")
+                    try:
+                        response = await asyncio.wait_for(conv.get_response(), timeout=5)
+                    except TelegramRetryAfter as e:
+                        logger.warning(f"Флуд-контроль Telegram: ждём {e.retry_after} секунд")
+                        await asyncio.sleep(e.retry_after)
+                        continue
+                    except asyncio.TimeoutError:
+                        logger.error("Таймаут при выращивании культуры")
+                        await asyncio.sleep(5)  # Задержка перед повтором
+                        continue
+                    except Exception as e:
+                        logger.error(f"Ошибка при выращивании культуры: {e}")
+                        await asyncio.sleep(5)  # Задержка перед повтором
+                        continue
+
+                    if "успешно вырастил(-а)" in response.raw_text:
+                        water -= 1
+                        warehouse[resource_key] += 1
+                        self._set_data("warehouse", warehouse)
+                        self._set_data("water", water)
+                        logger.info(f"Выращена {resource}, вода: {water}, склад: {warehouse[resource_key]}")
+                    elif "у тебя не хватает" in response.raw_text:
+                        logger.info("Недостаточно воды или ресурсов, ожидание 10 минут для накопления 1 капли")
+                        self._set_data("greenhouse_active", False)  # Временно отключаем
+                        await asyncio.sleep(600)  # 10 минут = 600 секунд
+                        if self._get_data("greenhouse_manual_stop", False):
+                            logger.info("Автофарм остаётся выключенным из-за ручного управления")
+                            break
+                        water += 1  # Предполагаем, что 1 капля накопилась
+                        self._set_data("water", water)
+                        self._set_data("greenhouse_active", True)  # Автоматически включаем
+                        logger.info(f"Вода обновлена: {water}, автофарм возобновлён")
+                        continue
+
+                    await asyncio.sleep(5)  # Увеличена задержка до 5 секунд между циклами
 
         return False
 
