@@ -4,7 +4,7 @@ import pathlib
 import re
 import asyncio
 import logging
-from hikkatl.errors import TelegramRetryAfter
+from telethon.errors import FloodWaitError
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -100,9 +100,9 @@ class ShadowUltimatCore:
                     await conv.send_message("Моя теплица")
                     try:
                         response = await asyncio.wait_for(conv.get_response(), timeout=5)
-                    except TelegramRetryAfter as e:
-                        logger.warning(f"Флуд-контроль Telegram: ждём {e.retry_after} секунд")
-                        await asyncio.sleep(e.retry_after)
+                    except FloodWaitError as e:
+                        logger.warning(f"Флуд-контроль Telegram: ждём {e.seconds} секунд")
+                        await asyncio.sleep(e.seconds)
                         continue
                     except asyncio.TimeoutError:
                         logger.error("Таймаут при получении данных теплицы")
@@ -204,13 +204,13 @@ class ShadowUltimatCore:
                         continue
 
                     # Выращиваем культуру (без эмодзи)
-                    await asyncio.sleep(3)  # Увеличена задержка до 3 секунд
+                    await asyncio.sleep(3)  # Задержка 3 секунды
                     await conv.send_message(f"вырастить {resource}")
                     try:
                         response = await asyncio.wait_for(conv.get_response(), timeout=5)
-                    except TelegramRetryAfter as e:
-                        logger.warning(f"Флуд-контроль Telegram: ждём {e.retry_after} секунд")
-                        await asyncio.sleep(e.retry_after)
+                    except FloodWaitError as e:
+                        logger.warning(f"Флуд-контроль Telegram: ждём {e.seconds} секунд")
+                        await asyncio.sleep(e.seconds)
                         continue
                     except asyncio.TimeoutError:
                         logger.error("Таймаут при выращивании культуры")
@@ -218,6 +218,62 @@ class ShadowUltimatCore:
                         continue
                     except Exception as e:
                         logger.error(f"Ошибка при выращивании культуры: {e}")
+                        await asyncio.sleep(5)  # Задержка перед повтором
+                        continue
+
+                    if "успешно вырастил(-а)" in response.raw_text:
+                        water -= 1
+                        warehouse[resource_key] += 1
+                        self._set_data("warehouse", warehouse)
+                        self._set_data("water", water)
+                        logger.info(f"Выращена {resource}, вода: {water}, склад: {warehouse[resource_key]}")
+                    elif "у тебя не хватает" in response.raw_text:
+                        logger.info("Недостаточно воды или ресурсов, ожидание 10 минут для накопления 1 капли")
+                        self._set_data("greenhouse_active", False)  # Временно отключаем
+                        await asyncio.sleep(600)  # 10 минут = 600 секунд
+                        if self._get_data("greenhouse_manual_stop", False):
+                            logger.info("Автофарм остаётся выключенным из-за ручного управления")
+                            break
+                        water += 1  # Предполагаем, что 1 капля накопилась
+                        self._set_data("water", water)
+                        self._set_data("greenhouse_active", True)  # Автоматически включаем
+                        logger.info(f"Вода обновлена: {water}, автофарм возобновлён")
+                        continue
+
+                    await asyncio.sleep(5)  # Задержка 5 секунд между циклами
+
+        return False
+
+    def extract_profile_data(self, text):
+        """Извлечение данных профиля"""
+        data = {}
+        for key, pattern in self.regexes.items():
+            match = re.search(pattern, text)
+            if key in ['bottles', 'bb_coins', 'gpoints']:
+                data[key] = match.group(1) if match and match.group(1) else match.group(2) if match else "0"
+            else:
+                data[key] = match.group(1) if match else "Нет данных"
+        return data
+
+    def get_vip_status(self, text, is_premium):
+        """Определение VIP-статуса"""
+        if "⭐️⭐️⭐️VIP4⭐️⭐️⭐️" in text:
+            return self.strings["vip4_premium" if is_premium else "vip4"]
+        elif "💎💎💎VIP3💎💎💎" in text:
+            return self.strings["vip3_premium" if is_premium else "vip3"]
+        elif re.search(r"🔥🔥🔥?VIP2🔥🔥🔥?", text):
+            return self.strings["vip2_premium" if is_premium else "vip2"]
+        elif "⚡️VIP1⚡️" in text:
+            return self.strings["vip1_premium" if is_premium else "vip1"]
+        return ""
+
+    def get_admin_status(self, text, is_premium):
+        """Определение статуса админа"""
+        if "💻 Тех. Администратор 💻" in text:
+            return self.strings["admin_tech_premium" if is_premium else "admin_tech"]
+        elif "😈 Администратор оф.чата 😈" in text:
+            return self.strings["admin_chat_premium" if is_premium else "admin_chat"]
+        return ""                        logger.error(f"Ошибка при выращивании культуры: {e}")
                         await asyncio.sleep(5)  # Задержка перед повтором
                         continue
 
