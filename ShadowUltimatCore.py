@@ -35,13 +35,13 @@ class ShadowUltimatCore:
             "помидор": "помидор",
         }
         self.regexes = {
-            "balance": r"💰 Баланс: ([\d,]+/[\d,]+)\s*кр\.",
-            "bottles": r"(?:🍾|🥂)\s*Бутылок: (\d+)",
-            "bb_coins": r"(?:🪙|💰)\s*BB-coins: (\d+)",
-            "gpoints": r"(?:🍪|🧹)\s*GPoints: (\d+)",
-            "profit": r"💵 Общая прибыль ([\d,]+)\s*кр\./час",
-            "username": r"🙎‍♂️ (.+?)(?=\n|$)",
-            "bunker_id": r"🏢 Бункер №(\d+)"
+            "balance": r"💰\s*Баланс:\s*([\d,]+/[\d,]+)\s*кр\.",
+            "bottles": r"(?:🍾|🥂)\s*Бутылок:\s*(\d+)",
+            "bb_coins": r"(?:🪙|💰)\s*BB-coins:\s*(\d+)",
+            "gpoints": r"(?:🍪|🧹)\s*GPoints:\s*(\d+)",
+            "profit": r"💵\s*Общая\s*прибыль\s*([\d,]+)\s*кр\./час",
+            "username": r"🙎‍♂️\s*(.+?)(?=\n|$)",
+            "bunker_id": r"🏢\s*Бункер\s*№(\d+)"
         }
         self.data_file = os.path.join(pathlib.Path.home(), ".hikka", "shadow_ultimat_data.json")
         os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
@@ -126,10 +126,10 @@ class ShadowUltimatCore:
                 continue
 
             text = response.raw_text
-            green_exp = re.search(r"⭐️ Опыт: ([\d,]+)", text)
-            water = re.search(r"💧 Вода: (\d+)/\d+ л\.", text)
-            resource_match = re.search(r"🪴 Тебе доступна: .+? (.+?)(?=\n|$)", text)
-            warehouse_match = re.search(r"📦 Твой склад:([\s\S]*?)(?=\n\n|\Z)", text)
+            green_exp = re.search(r"⭐️\s*Опыт:\s*([\d,]+)", text)
+            water = re.search(r"💧\s*Вода:\s*(\d+)/\d+\s*л\.", text)
+            resource_match = re.search(r"🪴\s*Тебе\s*доступна:\s*.+?\s*(.+?)(?=\n|$)", text)
+            warehouse_match = re.search(r"📦\s*Твой\s*склад:([\s\S]*?)(?=\n\n|\Z)", text)
 
             if not (green_exp and water and resource_match):
                 logger.error(f"Не удалось разобрать данные теплицы: {text}")
@@ -176,7 +176,7 @@ class ShadowUltimatCore:
             if warehouse_match:
                 warehouse_lines = warehouse_match.group(1).strip().split("\n")
                 for line in warehouse_lines:
-                    match = re.match(r"\s*(.+?) - (\d+) шт\.", line)
+                    match = re.match(r"\s*(.+?)\s*-\s*(\d+)\s*шт\.", line)
                     if match:
                         item = match.group(1).strip()
                         amount = int(match.group(2))
@@ -243,6 +243,54 @@ class ShadowUltimatCore:
                     break
                 else:
                     logger.warning(f"Неожиданный ответ на '{command}': {response.raw_text}")
+                    await asyncio.sleep(1.5)
+                    continue
+
+                await asyncio.sleep(1.5)
+
+            await asyncio.sleep(5)
+
+        return False
+
+    def extract_profile_data(self, text):
+        """Извлечение данных профиля"""
+        data = {
+            "balance": "0/0 кр.",
+            "bottles": "0",
+            "bb_coins": "0",
+            "gpoints": "0",
+            "profit": "0 кр./час",
+            "username": "Неизвестно",
+            "bunker_id": "0"
+        }
+        for key, pattern in self.regexes.items():
+            match = re.search(pattern, text, re.MULTILINE)
+            if match:
+                data[key] = match.group(1)
+                logger.debug(f"Извлечено {key}: {data[key]}")
+            else:
+                logger.warning(f"Не удалось извлечь {key} из текста: {text}")
+        return data
+
+    def get_vip_status(self, text, is_premium):
+        """Определение VIP-статуса"""
+        if "⭐️⭐️⭐️VIP4⭐️⭐️⭐️" in text:
+            return self.strings["vip4_premium" if is_premium else "vip4"]
+        elif "💎💎💎VIP3💎💎💎" in text:
+            return self.strings["vip3_premium" if is_premium else "vip3"]
+        elif re.search(r"🔥🔥🔥?VIP2🔥🔥🔥?", text):
+            return self.strings["vip2_premium" if is_premium else "vip2"]
+        elif "⚡️VIP1⚡️" in text:
+            return self.strings["vip1_premium" if is_premium else "vip1"]
+        return ""
+
+    def get_admin_status(self, text, is_premium):
+        """Определение статуса админа"""
+        if "💻 Тех. Администратор 💻" in text:
+            return self.strings["admin_tech_premium" if is_premium else "admin_tech"]
+        elif "😈 Администратор оф.чата 😈" in text:
+            return self.strings["admin_chat_premium" if is_premium else "admin_chat"]
+        return ""    logger.warning(f"Неожиданный ответ на '{command}': {response.raw_text}")
                     await asyncio.sleep(1.5)
                     continue
 
