@@ -35,11 +35,11 @@ class ShadowUltimatCore:
             "помидор": "помидор",
         }
         self.regexes = {
-            "balance": r"💰 Баланс: ([\d,]+/[\d,]+(?:kk)?\s*кр\.)",
-            "bottles": r"🍾 Бутылок: (\d+)|🥂 Бутылок: (\d+)",
-            "bb_coins": r"🪙 BB-coins: (\d+)|💰 BB-coins: (\d+)",
-            "gpoints": r"🍪 GPoints: (\d+)|🧹 GPoints: (\d+)",
-            "profit": r"💵 (.+?)(?=\n📅|\n🧍|\Z)",
+            "balance": r"💰 Баланс: ([\d,]+/[\d,]+)\s*кр\.",
+            "bottles": r"(?:🍾|🥂)\s*Бутылок: (\d+)",
+            "bb_coins": r"(?:🪙|💰)\s*BB-coins: (\d+)",
+            "gpoints": r"(?:🍪|🧹)\s*GPoints: (\d+)",
+            "profit": r"💵 Общая прибыль ([\d,]+)\s*кр\./час",
             "username": r"🙎‍♂️ (.+?)(?=\n|$)",
             "bunker_id": r"🏢 Бункер №(\d+)"
         }
@@ -119,7 +119,6 @@ class ShadowUltimatCore:
                 logger.debug("Автофарм приостановлен, ожидаем возобновления")
                 await self._pause_event.wait()
 
-            # Получаем данные теплицы
             response = await self._safe_conversation(client, "Моя теплица")
             if not response:
                 logger.warning("Нет ответа на 'Моя теплица', повтор через 5 сек")
@@ -150,7 +149,6 @@ class ShadowUltimatCore:
                 "🍅 Помидор": "tomato"
             }.get(resource, "potato")
 
-            # Проверка соответствия культуры опыту
             for exp_range, res in self._resources_map.items():
                 if green_exp in exp_range:
                     resource = res
@@ -212,7 +210,6 @@ class ShadowUltimatCore:
                 logger.info(f"Вода обновлена: {water}, автофарм возобновлён")
                 continue
 
-            # Цикл выращивания с задержкой 1.5 секунды
             while water > 0 and self._get_data("greenhouse_active", True):
                 command_resource = self._command_map.get(resource, "картошка")
                 command = f"вырастить {command_resource}"
@@ -249,23 +246,27 @@ class ShadowUltimatCore:
                     await asyncio.sleep(1.5)
                     continue
 
-                # Задержка 1.5 секунды между командами "вырастить"
                 await asyncio.sleep(1.5)
 
-            # Задержка перед следующей проверкой теплицы
-            await asyncio.sleep(5)  # Уменьшено с greenhouse_interval до 5 сек
+            await asyncio.sleep(5)
 
         return False
 
     def extract_profile_data(self, text):
         """Извлечение данных профиля"""
-        data = {}
+        data = {
+            "balance": "0/0 кр.",
+            "bottles": "0",
+            "bb_coins": "0",
+            "gpoints": "0",
+            "profit": "0 кр./час",
+            "username": "Неизвестно",
+            "bunker_id": "0"
+        }
         for key, pattern in self.regexes.items():
             match = re.search(pattern, text)
-            if key in ['bottles', 'bb_coins', 'gpoints']:
-                data[key] = match.group(1) if match and match.group(1) else match.group(2) if match else "0"
-            else:
-                data[key] = match.group(1) if match else "Нет данных"
+            if match:
+                data[key] = match.group(1)
         return data
 
     def get_vip_status(self, text, is_premium):
