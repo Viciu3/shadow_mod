@@ -31,7 +31,7 @@ class ShadowUltimatCore:
             "помидор": "помидор",
         }
         self.regexes = {
-            "balance": r"💰\s*Баланс:\s*(?:<b>)?([\d,]+/[\d,]+)(?:</b>)?\s*кр\.",
+            "balance": r"💰\s*Баланс:\s*(?:<b>)?([\d,]+(?:/[,\dkk]+)?)(?:</b>)?\s*кр\.",
             "bottles": r"(?:🍾|🥂)\s*Бутылок:\s*(?:<b>)?(\d+)(?:</b>)?",
             "bb_coins": r"(?:🪙|💰)\s*BB-coins:\s*(?:<b>)?(\d+)(?:</b>)?",
             "gpoints": r"(?:🍪|🧹)\s*GPoints:\s*(?:<b>)?(\d+)(?:</b>)?",
@@ -61,7 +61,7 @@ class ShadowUltimatCore:
                 "bean": 0,
                 "tomato": 0
             },
-            "message_ids": {}  # Добавляем поле для хранения ID сообщений
+            "message_ids": {}
         }
         if not os.path.exists(self.data_file):
             with open(self.data_file, 'w', encoding='utf-8') as f:
@@ -234,6 +234,29 @@ class ShadowUltimatCore:
 
     def extract_profile_data(self, text):
         """Извлечение данных профиля"""
+        def convert_balance(match):
+            balance = match.group(1)
+            parts = balance.split('/')
+            result = []
+
+            for part in parts:
+                # Находим суффикс k, kk, kkk и т.д.
+                k_match = re.search(r'(\d+[,\d]*)(k+)', part, re.IGNORECASE)
+                if k_match:
+                    num_str = k_match.group(1).replace(',', '.')  # Заменяем запятую на точку для float
+                    k_count = len(k_match.group(2))  # Количество k
+                    try:
+                        num = float(num_str) * (10 ** (3 * k_count))  # Умножаем на 10^(3*k_count)
+                        # Форматируем число с разделителями тысяч
+                        formatted_num = f"{int(num):,}".replace(',', ' ')
+                    except ValueError:
+                        formatted_num = part  # Если не удалось преобразовать, оставляем как есть
+                else:
+                    formatted_num = part.replace(',', ' ')  # Заменяем запятые на пробелы для единообразия
+                result.append(formatted_num)
+
+            return '/'.join(result)
+
         data = {
             "balance": "0/0 кр.",
             "bottles": "0",
@@ -246,7 +269,10 @@ class ShadowUltimatCore:
         for key, pattern in self.regexes.items():
             match = re.search(pattern, text, re.MULTILINE)
             if match:
-                data[key] = match.group(1)
+                if key == "balance":
+                    data[key] = convert_balance(match)
+                else:
+                    data[key] = match.group(1)
         return data
 
     def get_vip_status(self, text, is_premium):
@@ -263,8 +289,9 @@ class ShadowUltimatCore:
 
     def get_admin_status(self, text, is_premium):
         """Определение статуса админа"""
+        admin_status = ""
         if "💻 Тех. Администратор 💻" in text:
-            return self.strings["admin_tech_premium" if is_premium else "admin_tech"]
-        elif "😈 Администратор оф.чата 😈" in text:
-            return self.strings["admin_chat_premium" if is_premium else "admin_chat"]
-        return ""
+            admin_status += self.strings["admin_tech_premium" if is_premium else "admin_tech"]
+        if "😈 Администратор оф.чата 😈" in text:
+            admin_status += self.strings["admin_chat_premium" if is_premium else "admin_chat"]
+        return admin_status
