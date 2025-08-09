@@ -60,7 +60,8 @@ class ShadowUltimatCore:
                 "cucumber": 0,
                 "bean": 0,
                 "tomato": 0
-            }
+            },
+            "message_ids": {}  # Добавляем поле для хранения ID сообщений
         }
         if not os.path.exists(self.data_file):
             with open(self.data_file, 'w', encoding='utf-8') as f:
