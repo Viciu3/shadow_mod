@@ -35,11 +35,11 @@ class ShadowUltimatCore:
             "помидор": "помидор",
         }
         self.regexes = {
-            "balance": r"💰\s*Баланс:\s*([\d,]+/[\d,]+)\s*кр\.",
-            "bottles": r"(?:🍾|🥂)\s*Бутылок:\s*(\d+)",
-            "bb_coins": r"(?:🪙|💰)\s*BB-coins:\s*(\d+)",
-            "gpoints": r"(?:🍪|🧹)\s*GPoints:\s*(\d+)",
-            "profit": r"💵\s*Общая\s*прибыль\s*([\d,]+)\s*кр\./час",
+            "balance": r"💰\s*Баланс:\s*(?:<b>)?([\d,]+/[\d,]+)(?:</b>)?\s*кр\.",
+            "bottles": r"(?:🍾|🥂)\s*Бутылок:\s*(?:<b>)?(\d+)(?:</b>)?",
+            "bb_coins": r"(?:🪙|💰)\s*BB-coins:\s*(?:<b>)?(\d+)(?:</b>)?",
+            "gpoints": r"(?:🍪|🧹)\s*GPoints:\s*(?:<b>)?(\d+)(?:</b>)?",
+            "profit": r"💵\s*Общая\s*прибыль\s*(?:<b>)?([\d,]+)(?:</b>)?\s*кр\./час",
             "username": r"🙎‍♂️\s*(.+?)(?=\n|$)",
             "bunker_id": r"🏢\s*Бункер\s*№(\d+)"
         }
@@ -126,8 +126,8 @@ class ShadowUltimatCore:
                 continue
 
             text = response.raw_text
-            green_exp = re.search(r"⭐️\s*Опыт:\s*([\d,]+)", text)
-            water = re.search(r"💧\s*Вода:\s*(\d+)/\d+\s*л\.", text)
+            green_exp = re.search(r"⭐️\s*Опыт:\s*(?:<b>)?([\d,]+)(?:</b>)?", text)
+            water = re.search(r"💧\s*Вода:\s*(?:<b>)?(\d+)/\d+\s*л\.(?:</b>)?", text)
             resource_match = re.search(r"🪴\s*Тебе\s*доступна:\s*.+?\s*(.+?)(?=\n|$)", text)
             warehouse_match = re.search(r"📦\s*Твой\s*склад:([\s\S]*?)(?=\n\n|\Z)", text)
 
