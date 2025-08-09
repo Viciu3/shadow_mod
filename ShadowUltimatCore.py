@@ -17,12 +17,12 @@ class ShadowUltimatCore:
         self._pause_event = asyncio.Event()
         self._pause_event.set()
         self._resources_map = {
-            range(0, 501): "картошка",
-            range(501, 2001): "морковь",
-            range(2001, 10001): "рис",
-            range(10001, 25001): "свекла",
-            range(25001, 60001): "огурец",
-            range(60001, 100001): "фасоль",
+            range(0, 500): "картошку",
+            range(501, 2000): "морковь",
+            range(2001, 10000): "рис",
+            range(10001, 25000): "свеклу",
+            range(25001, 60000): "огурец",
+            range(60001, 100000): "фасоль",
             range(100001, 10**50): "помидор",
         }
         self.regexes = {
