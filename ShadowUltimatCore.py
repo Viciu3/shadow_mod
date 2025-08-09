@@ -189,7 +189,7 @@ class ShadowUltimatCore:
                             "🫘 Фасоль": "bean",
                             "🍅 Помидор": "tomato"
                         }.get(item, None)
-                        if item_key:
+                        if item_key is not None:
                             warehouse[item_key] = amount
                         else:
                             logger.warning(f"Неизвестный предмет на складе: {item}")
