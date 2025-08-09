@@ -3,17 +3,13 @@ import os
 import pathlib
 import re
 import asyncio
-import logging
-
-# Настройка логирования
-logger = logging.getLogger(__name__)
 
 class ShadowUltimatCore:
     def __init__(self, bot, config, strings, lock):
         self.bot = bot
         self.config = config
         self.strings = strings
-        self._lock = lock  # Глобальная блокировка для диалогов
+        self._lock = lock
         self._pause_event = asyncio.Event()
         self._pause_event.set()
         self._resources_map = {
@@ -100,28 +96,22 @@ class ShadowUltimatCore:
         async with self._lock:
             try:
                 async with client.conversation(self.bot) as conv:
-                    logger.debug(f"Отправка команды: {cmd}")
                     await conv.send_message(cmd)
                     response = await asyncio.wait_for(conv.get_response(), timeout=timeout)
-                    logger.debug(f"Ответ на '{cmd}': {response.raw_text}")
                     return response
             except asyncio.TimeoutError:
-                logger.error(f"Таймаут при выполнении команды {cmd}")
                 return None
-            except Exception as e:
-                logger.error(f"Ошибка при выполнении команды {cmd}: {e}")
+            except Exception:
                 return None
 
     async def _greenhouse(self, client):
         """Автофарм теплицы с задержкой 1.5 сек между командами 'вырастить'"""
         while self._get_data("greenhouse_active", True):
             if self._get_data("greenhouse_paused", False):
-                logger.debug("Автофарм приостановлен, ожидаем возобновления")
                 await self._pause_event.wait()
 
             response = await self._safe_conversation(client, "Моя теплица")
             if not response:
-                logger.warning("Нет ответа на 'Моя теплица', повтор через 5 сек")
                 await asyncio.sleep(5)
                 continue
 
@@ -132,7 +122,6 @@ class ShadowUltimatCore:
             warehouse_match = re.search(r"📦\s*Твой\s*склад:([\s\S]*?)(?=\n\n|\Z)", text)
 
             if not (green_exp and water and resource_match):
-                logger.error(f"Не удалось разобрать данные теплицы: {text}")
                 await asyncio.sleep(5)
                 continue
 
@@ -191,8 +180,6 @@ class ShadowUltimatCore:
                         }.get(item, None)
                         if item_key is not None:
                             warehouse[item_key] = amount
-                        else:
-                            logger.warning(f"Неизвестный предмет на складе: {item}")
 
             self._set_data("experience", green_exp)
             self._set_data("water", water)
@@ -200,16 +187,13 @@ class ShadowUltimatCore:
             self._set_data("warehouse", warehouse)
 
             if water == 0:
-                logger.info("Вода закончилась, ожидание 10 минут")
                 self._set_data("greenhouse_active", False)
                 await asyncio.sleep(600)
                 if self._get_data("greenhouse_manual_stop", False):
-                    logger.info("Автофарм остаётся выключенным из-за ручного управления")
                     break
                 water += 1
                 self._set_data("water", water)
                 self._set_data("greenhouse_active", True)
-                logger.info(f"Вода обновлена: {water}, автофарм возобновлён")
                 continue
 
             while water > 0 and self._get_data("greenhouse_active", True):
@@ -217,7 +201,6 @@ class ShadowUltimatCore:
                 command = f"вырастить {command_resource}"
                 response = await self._safe_conversation(client, command)
                 if not response:
-                    logger.warning(f"Нет ответа на '{command}', повтор через 1.5 сек")
                     await asyncio.sleep(1.5)
                     continue
 
@@ -226,25 +209,19 @@ class ShadowUltimatCore:
                     warehouse[resource_key] += 1
                     self._set_data("warehouse", warehouse)
                     self._set_data("water", water)
-                    logger.info(f"Выращена {resource}, вода: {water}, склад: {warehouse[resource_key]}")
                 elif "у тебя не хватает" in response.raw_text:
-                    logger.info("Недостаточно воды, ожидание 10 минут")
                     self._set_data("greenhouse_active", False)
                     await asyncio.sleep(600)
                     if self._get_data("greenhouse_manual_stop", False):
-                        logger.info("Автофарм остаётся выключенным из-за ручного управления")
                         break
                     water += 1
                     self._set_data("water", water)
                     self._set_data("greenhouse_active", True)
-                    logger.info(f"Вода обновлена: {water}, автофарм возобновлён")
                     break
                 elif "VIP" in response.raw_text:
-                    logger.error(f"Требуется VIP-статус для выращивания: {response.raw_text}")
                     self._set_data("greenhouse_active", False)
                     break
                 else:
-                    logger.warning(f"Неожиданный ответ на '{command}': {response.raw_text}")
                     await asyncio.sleep(1.5)
                     continue
 
@@ -269,9 +246,6 @@ class ShadowUltimatCore:
             match = re.search(pattern, text, re.MULTILINE)
             if match:
                 data[key] = match.group(1)
-                logger.debug(f"Извлечено {key}: {data[key]}")
-            else:
-                logger.warning(f"Не удалось извлечь {key} из текста: {text}")
         return data
 
     def get_vip_status(self, text, is_premium):
