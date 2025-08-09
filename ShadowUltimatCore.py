@@ -17,13 +17,22 @@ class ShadowUltimatCore:
         self._pause_event = asyncio.Event()
         self._pause_event.set()
         self._resources_map = {
-            range(0, 500): "картошку",
-            range(501, 2000): "морковь",
-            range(2001, 10000): "рис",
-            range(10001, 25000): "свеклу",
-            range(25001, 60000): "огурец",
-            range(60001, 100000): "фасоль",
+            range(0, 501): "картошка",
+            range(501, 2001): "морковь",
+            range(2001, 10001): "рис",
+            range(10001, 25001): "свекла",
+            range(25001, 60001): "огурец",
+            range(60001, 100001): "фасоль",
             range(100001, 10**50): "помидор",
+        }
+        self._command_map = {
+            "картошка": "картошка",
+            "морковь": "морковь",
+            "рис": "рис",
+            "свекла": "свекла",
+            "огурец": "огурец",
+            "фасоль": "фасоль",
+            "помидор": "помидор",
         }
         self.regexes = {
             "balance": r"💰 Баланс: ([\d,]+/[\d,]+(?:kk)?\s*кр\.)",
@@ -114,9 +123,9 @@ class ShadowUltimatCore:
                 continue
 
             text = response.raw_text
-            green_exp = re.search(r"Опыт: (\d+)", text)
-            water = re.search(r"Вода: (\d+)/\d+ л\.", text)
-            resource_match = re.search(r"🪴 Тебе доступна: (.+?)(?=\n|$)", text)
+            green_exp = re.search(r"⭐️ Опыт: ([\d,]+)", text)
+            water = re.search(r"💧 Вода: (\d+)/\d+ л\.", text)
+            resource_match = re.search(r"🪴 Тебе доступна: .+? (.+?)(?=\n|$)", text)
             warehouse_match = re.search(r"📦 Твой склад:([\s\S]*?)(?=\n\n|\Z)", text)
 
             if not (green_exp and water and resource_match):
@@ -124,7 +133,7 @@ class ShadowUltimatCore:
                 await asyncio.sleep(self.config["greenhouse_interval"])
                 continue
 
-            green_exp = int(green_exp.group(1))
+            green_exp = int(green_exp.group(1).replace(",", ""))
             water = int(water.group(1))
             resource = resource_match.group(1).strip()
             resource_key = {
@@ -137,6 +146,7 @@ class ShadowUltimatCore:
                 "🍅 Помидор": "tomato"
             }.get(resource, "potato")
 
+            # Проверка соответствия культуры опыту
             for exp_range, res in self._resources_map.items():
                 if green_exp in exp_range:
                     resource = res
@@ -198,7 +208,9 @@ class ShadowUltimatCore:
                 logger.info(f"Вода обновлена: {water}, автофарм возобновлён")
                 continue
 
-            response = await self._safe_conversation(client, f"вырастить {resource}")
+            # Формируем команду для выращивания культуры
+            command_resource = self._command_map.get(resource, "картошка")
+            response = await self._safe_conversation(client, f"вырастить {command_resource}")
             if not response:
                 await asyncio.sleep(self.config["greenhouse_interval"])
                 continue
