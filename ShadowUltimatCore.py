@@ -188,9 +188,11 @@ class ShadowUltimatCore:
                             "🥒 Огурец": "cucumber",
                             "🫘 Фасоль": "bean",
                             "🍅 Помидор": "tomato"
-                        }.get(item)
+                        }.get(item, None)
                         if item_key:
                             warehouse[item_key] = amount
+                        else:
+                            logger.warning(f"Неизвестный предмет на складе: {item}")
 
             self._set_data("experience", green_exp)
             self._set_data("water", water)
@@ -270,51 +272,6 @@ class ShadowUltimatCore:
                 logger.debug(f"Извлечено {key}: {data[key]}")
             else:
                 logger.warning(f"Не удалось извлечь {key} из текста: {text}")
-        return data
-
-    def get_vip_status(self, text, is_premium):
-        """Определение VIP-статуса"""
-        if "⭐️⭐️⭐️VIP4⭐️⭐️⭐️" in text:
-            return self.strings["vip4_premium" if is_premium else "vip4"]
-        elif "💎💎💎VIP3💎💎💎" in text:
-            return self.strings["vip3_premium" if is_premium else "vip3"]
-        elif re.search(r"🔥🔥🔥?VIP2🔥🔥🔥?", text):
-            return self.strings["vip2_premium" if is_premium else "vip2"]
-        elif "⚡️VIP1⚡️" in text:
-            return self.strings["vip1_premium" if is_premium else "vip1"]
-        return ""
-
-    def get_admin_status(self, text, is_premium):
-        """Определение статуса админа"""
-        if "💻 Тех. Администратор 💻" in text:
-            return self.strings["admin_tech_premium" if is_premium else "admin_tech"]
-        elif "😈 Администратор оф.чата 😈" in text:
-            return self.strings["admin_chat_premium" if is_premium else "admin_chat"]
-        return ""    logger.warning(f"Неожиданный ответ на '{command}': {response.raw_text}")
-                    await asyncio.sleep(1.5)
-                    continue
-
-                await asyncio.sleep(1.5)
-
-            await asyncio.sleep(5)
-
-        return False
-
-    def extract_profile_data(self, text):
-        """Извлечение данных профиля"""
-        data = {
-            "balance": "0/0 кр.",
-            "bottles": "0",
-            "bb_coins": "0",
-            "gpoints": "0",
-            "profit": "0 кр./час",
-            "username": "Неизвестно",
-            "bunker_id": "0"
-        }
-        for key, pattern in self.regexes.items():
-            match = re.search(pattern, text)
-            if match:
-                data[key] = match.group(1)
         return data
 
     def get_vip_status(self, text, is_premium):
