@@ -3,7 +3,7 @@ import os
 import pathlib
 import re
 import asyncio
-from hikkatl import functions
+from herokutl import functions
 
 class ShadowUltimatCore:
     def __init__(self, bot, config, strings, lock):
