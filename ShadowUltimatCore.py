@@ -3,6 +3,7 @@ import os
 import pathlib
 import re
 import asyncio
+from hikkatl import functions
 
 class ShadowUltimatCore:
     def __init__(self, bot, config, strings, lock):
@@ -30,6 +31,12 @@ class ShadowUltimatCore:
             "фасоль": "фасоль",
             "помидор": "помидор",
         }
+        self._mine_resources_map = {
+            "Уголь": "coal",
+            "Железо": "iron",
+            "Уран": "uranium",
+            "Алмаз": "diamond"
+        }
         self.regexes = {
             "balance": r"💰\s*Баланс:\s*(?:<b>)?([\d,]+(?:/[,\dkk]+)?)(?:</b>)?\s*кр\.",
             "bottles": r"(?:🍾|🥂)\s*Бутылок:\s*(?:<b>)?(\d+)(?:</b>)?",
@@ -49,6 +56,8 @@ class ShadowUltimatCore:
             "greenhouse_active": True,
             "greenhouse_manual_stop": False,
             "greenhouse_paused": False,
+            "mine_active": True,
+            "mine_manual_stop": False,
             "experience": 0,
             "water": 0,
             "current_resource": "картошка",
@@ -60,6 +69,12 @@ class ShadowUltimatCore:
                 "cucumber": 0,
                 "bean": 0,
                 "tomato": 0
+            },
+            "mine_warehouse": {
+                "coal": 0,
+                "iron": 0,
+                "uranium": 0,
+                "diamond": 0
             },
             "message_ids": {}
         }
@@ -106,13 +121,17 @@ class ShadowUltimatCore:
                 return None
 
     async def _greenhouse(self, client):
-        """Автофарм теплицы с задержкой 1.5 сек между командами 'вырастить'"""
+        """Автофарм теплицы с улучшенной логикой восстановления воды"""
+        is_premium = (await client.get_me()).premium
+        log_prefix = "<emoji document_id=5449885771420934013>🌱</emoji> " if is_premium else "🌱 "
+
         while self._get_data("greenhouse_active", True):
             if self._get_data("greenhouse_paused", False):
                 await self._pause_event.wait()
 
             response = await self._safe_conversation(client, "Моя теплица")
             if not response:
+                await client.send_message(self._log_channel, f"{log_prefix}🔻 Ошибка при запросе теплицы")
                 await asyncio.sleep(5)
                 continue
 
@@ -123,6 +142,7 @@ class ShadowUltimatCore:
             warehouse_match = re.search(r"📦\s*Твой\s*склад:([\s\S]*?)(?=\n\n|\Z)", text)
 
             if not (green_exp and water and resource_match):
+                await client.send_message(self._log_channel, f"{log_prefix}🔻 Некорректный ответ от теплицы")
                 await asyncio.sleep(5)
                 continue
 
@@ -189,12 +209,15 @@ class ShadowUltimatCore:
 
             if water == 0:
                 self._set_data("greenhouse_active", False)
-                await asyncio.sleep(600)
+                await client.send_message(self._log_channel, f"{log_prefix}🔻 Вода закончилась, жду восстановления...")
+                await asyncio.sleep(600)  # Ждём 10 минут
                 if self._get_data("greenhouse_manual_stop", False):
+                    await client.send_message(self._log_channel, f"{log_prefix}🔻 Автофарм теплицы остановлен вручную")
                     break
-                water += 1
+                water = 1
                 self._set_data("water", water)
                 self._set_data("greenhouse_active", True)
+                await client.send_message(self._log_channel, f"{log_prefix}🔹 Восстановлена 1 капля воды")
                 continue
 
             while water > 0 and self._get_data("greenhouse_active", True):
@@ -202,6 +225,7 @@ class ShadowUltimatCore:
                 command = f"вырастить {command_resource}"
                 response = await self._safe_conversation(client, command)
                 if not response:
+                    await client.send_message(self._log_channel, f"{log_prefix}🔻 Ошибка при выращивании {resource}")
                     await asyncio.sleep(1.5)
                     continue
 
@@ -210,25 +234,185 @@ class ShadowUltimatCore:
                     warehouse[resource_key] += 1
                     self._set_data("warehouse", warehouse)
                     self._set_data("water", water)
+                    await client.send_message(self._log_channel, f"{log_prefix}🔹 Успешно выращено {resource}!")
+                    # Запускаем задачу для ожидания восстановления воды
+                    asyncio.create_task(self._report_water_restore(client))
                 elif "у тебя не хватает" in response.raw_text:
                     self._set_data("greenhouse_active", False)
+                    await client.send_message(self._log_channel, f"{log_prefix}🔻 Недостаточно ресурсов, жду восстановления...")
                     await asyncio.sleep(600)
                     if self._get_data("greenhouse_manual_stop", False):
+                        await client.send_message(self._log_channel, f"{log_prefix}🔻 Автофарм теплицы остановлен вручную")
                         break
-                    water += 1
+                    water = 1
                     self._set_data("water", water)
                     self._set_data("greenhouse_active", True)
+                    await client.send_message(self._log_channel, f"{log_prefix}🔹 Восстановлена 1 капля воды")
                     break
                 elif "VIP" in response.raw_text:
                     self._set_data("greenhouse_active", False)
+                    await client.send_message(self._log_channel, f"{log_prefix}🔻 Требуется VIP-статус для теплицы")
                     break
                 else:
+                    await client.send_message(self._log_channel, f"{log_prefix}🔻 Неизвестный ответ при выращивании: {response.raw_text}")
                     await asyncio.sleep(1.5)
                     continue
 
                 await asyncio.sleep(1.5)
 
-            await asyncio.sleep(5)
+            await asyncio.sleep(self.config["greenhouse_interval"])
+
+        return False
+
+    async def _report_water_restore(self, client):
+        """Отправляет отчёт о восстановлении воды через 10 минут"""
+        is_premium = (await client.get_me()).premium
+        log_prefix = "<emoji document_id=5449885771420934013>🌱</emoji> " if is_premium else "🌱 "
+        await asyncio.sleep(600)  # Ждём 10 минут
+        if self._get_data("greenhouse_active", True):
+            await client.send_message(self._log_channel, f"{log_prefix}🔹 За 10 минут восстановится 1 капля воды")
+
+    async def _mine(self, client):
+        """Автофарм шахты"""
+        is_premium = (await client.get_me()).premium
+        log_prefix = "<emoji document_id=5413478709875450870>⛏</emoji> " if is_premium else "⛏ "
+
+        while self._get_data("mine_active", True):
+            async with self._lock:
+                response = await self._safe_conversation(client, "копать")
+                if not response:
+                    await client.send_message(self._log_channel, f"{log_prefix}🔻 Ошибка при выполнении команды 'копать'")
+                    await asyncio.sleep(5)
+                    continue
+
+                if "у тебя нет кирки" in response.raw_text:
+                    await asyncio.sleep(1.5)
+                    response = await self._safe_conversation(client, "Б")
+                    if not response:
+                        await client.send_message(self._log_channel, f"{log_prefix}🔻 Ошибка при проверке баланса")
+                        await asyncio.sleep(5)
+                        continue
+
+                    balance = int("".join(s for s in response.raw_text.split("Баланс:")[1].split('/')[0].strip() if s.isdigit()))
+                    if balance < 30000:
+                        await client.send_message(self._log_channel, f"{log_prefix}🔻 Недостаточно крышек для покупки кирки")
+                        await asyncio.sleep(self.config["mine_interval"])
+                        continue
+
+                    await asyncio.sleep(1.5)
+                    if balance >= 1000000:
+                        await self._safe_conversation(client, "Купить алмазную кирку")
+                    elif balance >= 200000:
+                        await self._safe_conversation(client, "Купить железную кирку")
+                    else:
+                        await self._safe_conversation(client, "Купить каменную кирку")
+                        await asyncio.sleep(self.config["mine_interval"])
+                        continue
+
+                    response = await self._safe_conversation(client, "копать")
+                    if not response:
+                        await client.send_message(self._log_channel, f"{log_prefix}🔻 Ошибка при повторной команде 'копать'")
+                        await asyncio.sleep(5)
+                        continue
+
+                if 'отдохнёт' in response.raw_text:
+                    await client.send_message(self._log_channel, f"{log_prefix}🔻 Кирка отдыхает")
+                    await asyncio.sleep(self.config["mine_interval"])
+                    continue
+
+                resources_result = response.raw_text.split("ты нашёл")
+                if len(resources_result) > 1:
+                    resources_text = resources_result[1].split(' ')[1:]
+                    resources = ' '.join(resources_text).split('.')[0]
+                else:
+                    resources = 'Воздух'
+
+                probability_result = response.raw_text.split("вероятностью")
+                if len(probability_result) > 1:
+                    probability_text = probability_result[1]
+                    probability = int("".join(s for s in probability_text.split('%')[0].strip() if s.isdigit()))
+                else:
+                    probability = 0
+
+                mine_warehouse = self._get_data("mine_warehouse", {
+                    "coal": 0, "iron": 0, "uranium": 0, "diamond": 0
+                })
+
+                if self.config.get("MineDiamond", False):
+                    if "ты нашёл 💎 Алмаз." in response.message or probability == 100:
+                        await asyncio.sleep(1.5)
+                        await response.click(0)
+                        response = await self._safe_conversation(client, response.message_id, timeout=5)
+                        if response and "Прочность твоей кирки уменьшена" in response.text:
+                            await client.send_message(self._log_channel, f"{log_prefix}🔻 Прочность кирки уменьшена")
+                        else:
+                            resource_key = self._mine_resources_map.get(resources, None)
+                            if resource_key:
+                                mine_warehouse[resource_key] += 1
+                                self._set_data("mine_warehouse", mine_warehouse)
+                            await client.send_message(self._log_channel, f"{log_prefix}🔹 Ты добыл {resources} с шансом {probability}%")
+                    else:
+                        if self.config.get("SkipNonUranium", True) and "Уран" not in resources:
+                            await asyncio.sleep(1.5)
+                            await response.click(1)
+                            await client.send_message(self._log_channel, f"{log_prefix}🔸 Ты пропустил {resources} с шансом {probability}%")
+                        else:
+                            await asyncio.sleep(1.5)
+                            await response.click(0)
+                            resource_key = self._mine_resources_map.get(resources, None)
+                            if resource_key:
+                                mine_warehouse[resource_key] += 1
+                                self._set_data("mine_warehouse", mine_warehouse)
+                            await client.send_message(self._log_channel, f"{log_prefix}🔹 Ты добыл {resources} с шансом {probability}%")
+                else:
+                    await asyncio.sleep(1.5)
+                    await response.click(0)
+                    response = await self._safe_conversation(client, response.message_id, timeout=5)
+                    if response and "Прочность твоей кирки уменьшена" in response.text:
+                        await client.send_message(self._log_channel, f"{log_prefix}🔻 Прочность кирки уменьшена")
+                    else:
+                        resource_key = self._mine_resources_map.get(resources, None)
+                        if resource_key:
+                            mine_warehouse[resource_key] += 1
+                            self._set_data("mine_warehouse", mine_warehouse)
+                        if self.config.get("SkipNonUranium", True) and "Уран" not in resources:
+                            await client.send_message(self._log_channel, f"{log_prefix}🔸 Ты пропустил {resources} с шансом {probability}%")
+                        else:
+                            await client.send_message(self._log_channel, f"{log_prefix}🔹 Ты добыл {resources} с шансом {probability}%")
+                    await asyncio.sleep(self.config["mine_interval"])
+                    continue
+
+                if self.config.get("MineProbability", False):
+                    if 80 <= probability <= 100:
+                        await asyncio.sleep(1.5)
+                        await response.click(0)
+                        response = await self._safe_conversation(client, response.message_id, timeout=5)
+                        if response and "Прочность твоей кирки уменьшена" in response.text:
+                            await client.send_message(self._log_channel, f"{log_prefix}🔻 Прочность кирки уменьшена")
+                        else:
+                            resource_key = self._mine_resources_map.get(resources, None)
+                            if resource_key:
+                                mine_warehouse[resource_key] += 1
+                                self._set_data("mine_warehouse", mine_warehouse)
+                            await client.send_message(self._log_channel, f"{log_prefix}🔹 Ты добыл {resources} с шансом {probability}%")
+                    else:
+                        await asyncio.sleep(1.5)
+                        await response.click(1)
+                        await client.send_message(self._log_channel, f"{log_prefix}🔸 Ты пропустил {resources} с шансом {probability}%")
+                else:
+                    await asyncio.sleep(1.5)
+                    await response.click(0)
+                    response = await self._safe_conversation(client, response.message_id, timeout=5)
+                    if response and "Прочность твоей кирки уменьшена" in response.text:
+                        await client.send_message(self._log_channel, f"{log_prefix}🔻 Прочность кирки уменьшена")
+                    else:
+                        resource_key = self._mine_resources_map.get(resources, None)
+                        if resource_key:
+                            mine_warehouse[resource_key] += 1
+                            self._set_data("mine_warehouse", mine_warehouse)
+                        await client.send_message(self._log_channel, f"{log_prefix}🔹 Ты добыл {resources} с шансом {probability}%")
+
+                await asyncio.sleep(self.config["mine_interval"])
 
         return False
 
@@ -240,19 +424,17 @@ class ShadowUltimatCore:
             result = []
 
             for part in parts:
-                # Находим суффикс k, kk, kkk и т.д.
                 k_match = re.search(r'(\d+[,\d]*)(k+)', part, re.IGNORECASE)
                 if k_match:
-                    num_str = k_match.group(1).replace(',', '.')  # Заменяем запятую на точку для float
-                    k_count = len(k_match.group(2))  # Количество k
+                    num_str = k_match.group(1).replace(',', '.')
+                    k_count = len(k_match.group(2))
                     try:
-                        num = float(num_str) * (10 ** (3 * k_count))  # Умножаем на 10^(3*k_count)
-                        # Форматируем число с разделителями тысяч
+                        num = float(num_str) * (10 ** (3 * k_count))
                         formatted_num = f"{int(num):,}".replace(',', ' ')
                     except ValueError:
-                        formatted_num = part  # Если не удалось преобразовать, оставляем как есть
+                        formatted_num = part
                 else:
-                    formatted_num = part.replace(',', ' ')  # Заменяем запятые на пробелы для единообразия
+                    formatted_num = part.replace(',', ' ')
                 result.append(formatted_num)
 
             return '/'.join(result)
