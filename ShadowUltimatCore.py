@@ -3,7 +3,7 @@ import os
 import pathlib
 import re
 import asyncio
-from herokutl import functions
+from herokutl.types import Message
 
 class ShadowUltimatCore:
     def __init__(self, bot, config, strings, lock):
@@ -46,7 +46,7 @@ class ShadowUltimatCore:
             "username": r"🙎‍♂️\s*(.+?)(?=\n|$)",
             "bunker_id": r"🏢\s*Бункер\s*№(\d+)"
         }
-        self.data_file = os.path.join(pathlib.Path.home(), ".hikka", "shadow_ultimat_data.json")
+        self.data_file = os.path.join(pathlib.Path.home(), ".heroku", "shadow_ultimat_data.json")
         os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
         self._init_data()
 
@@ -108,16 +108,14 @@ class ShadowUltimatCore:
         self._save_data(data)
 
     async def _safe_conversation(self, client, cmd, timeout=5):
-        """Безопасный диалог без обработки флуд-вейта"""
+        """Безопасный диалог без обработки флуд-лимитов"""
         async with self._lock:
             try:
                 async with client.conversation(self.bot) as conv:
                     await conv.send_message(cmd)
                     response = await asyncio.wait_for(conv.get_response(), timeout=timeout)
                     return response
-            except asyncio.TimeoutError:
-                return None
-            except Exception:
+            except (asyncio.TimeoutError, Exception):
                 return None
 
     async def _greenhouse(self, client):
