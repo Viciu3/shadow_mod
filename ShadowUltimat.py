@@ -1,518 +1,576 @@
-import json
-import os
-import pathlib
-import re
-import asyncio
-import logging
-from hikkatl.types import Message
+from herokutl.types import Message
 from .. import loader, utils
-
-# Set up logging for debugging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+import asyncio
+import re
+import typing
+from telethon.tl.types import Message, ChatAdminRights
+from telethon import functions
+from datetime import datetime, timedelta
 
 @loader.tds
 class ShadowUltimat(loader.Module):
-    """ v777 by @shadow_mod777 для управления BFGB"""
-
-    strings = {
-        "name": "ShadowUltimat",
-        "base_template": (
-            "📓  | Shadow_Ultimat > <b><i><u>BFGB</u></i></b> < @bfgbunker_bot\n"
-            "╔═╣════════════════╗\n"
-            "║  🔻СТАТУС |💣| BFGB🔻\n"
-            "╠══════════════════╣\n"
-            "{greenhouse_status}"
-            "╠══════════════════╣\n"
-            "{garden_status}"
-            "╠══════════════════╣\n"
-            "║👁‍🗨 Команды: \n"
-            "╠═╣<code>{prefix}теплица</code> - on/off\n"
-            "╠═╣<code>{prefix}сад</code> - on/off\n"
-            "╚═══════════════════"
-        ),
-        "base_template_premium": (
-            "<emoji document_id=5337046505129799969>📔</emoji> | Shadow_Ultimat > <b><i><u>BFGB</u></i></b> < @bfgbunker_bot\n"
-            "╔═╣════════════════╗\n"
-            "║  <emoji document_id=5442623686098056812>🔻</emoji>СТАТУС |<emoji document_id=5226813248900187912>💣</emoji>| BFGB<emoji document_id=5442623686098056812>🔻</emoji>\n"
-            "╠══════════════════╣\n"
-            "{greenhouse_status}"
-            "╠══════════════════╣\n"
-            "{garden_status}"
-            "╠══════════════════╣\n"
-            "║<emoji document_id=5873224578775387997>👁‍🗨</emoji> Команды: \n"
-            "╠═╣<code>{prefix}теплица</code> - on/off\n"
-            "╠═╣<code>{prefix}сад</code> - on/off\n"
-            "╚═══════════════════"
-        ),
-        "greenhouse_active": (
-            "║~$ 🌱 Теплица: 🟢\n"
-            "║~# ( картошка | {experience}.xp )\n"
-        ),
-        "greenhouse_inactive": (
-            "║~$ 🌱 Теплица: 🔴\n"
-        ),
-        "garden_active": (
-            "║~$ 🌳 Сад: 🟢\n"
-            "║\n"
-            "║~# ✨ Рост: Яблоки \n"
-            "║~#      ( время: )\n"
-            "║\n"
-            "║~# 📦 Склад:\n"
-            "║~#    🍏 Яблоко 0шт\n"
-            "║~#    🍒 Черешня 0шт\n"
-            "║~#    🍑 Персик 0шт\n"
-            "║~#    🍊 Мандарин 0шт\n"
-        ),
-        "garden_inactive": (
-            "║~$ 🌳 Сад: 🔴\n"
-        ),
-        "greenhouse_active_premium": (
-            "║~$ <emoji document_id=5449885771420934013>🌱</emoji> Теплица: <emoji document_id=5474212414645882920>🟢</emoji>\n"
-            "║~# ( картошка | {experience}.xp )\n"
-        ),
-        "greenhouse_inactive_premium": (
-            "║~$ <emoji document_id=5449885771420934013>🌱</emoji> Теплица: <emoji document_id=5949785428843302949>❌</emoji>\n"
-        ),
-        "garden_active_premium": (
-            "║~$ <emoji document_id=5449918202718985124>🌳</emoji> Сад: <emoji document_id=5267231042934154418>🟢</emoji>\n"
-            "║\n"
-            "║~# <emoji document_id=5472164874886846699>✨</emoji> Рост: Яблоки \n"
-            "║~#      ( время: )\n"
-            "║\n"
-            "║~# <emoji document_id=5422536330213088080>📦</emoji> Склад:\n"
-            "║~#    <emoji document_id=5393416000974626525>🍏</emoji> Яблоко 0шт\n"
-            "║~#    <emoji document_id=5352672210332966665>🍒</emoji> Черешня 0шт\n"
-            "║~#    <emoji document_id=5386831554116855357>🍑</emoji> Персик 0шт\n"
-            "║~#    <emoji document_id=5161401880529601474>🥺</emoji> Мандарин 0шт\n"
-        ),
-        "garden_inactive_premium": (
-            "║~$ <emoji document_id=5449918202718985124>🌳</emoji> Сад: <emoji document_id=5949785428843302949>❌</emoji>\n"
-        ),
-        "capacity_template": (
-            "📓  | Shadow_Ultimat > <b><i><u>BFGB</u></i></b> < @bfgbunker_bot\n"
-            "╔═╣════════════════╗\n"
-            "║  🔻СТАТУС |💣| BFGB🔻\n"
-            "╠══════════════════╣\n"
-            "║~$ 👜 Вместимость \n"
-            "╠══════════════════╣\n"
-            "{rooms}"
-            "╠══════════════════╣\n"
-            "║~$ 👥 Людей сейчас: {current_people}\n"
-            "║~$ 📊 Макс. мест: {max_capacity}\n"
-            "║~$ 🚪 Открыто: {open_rooms}/18\n"
-            "╠══════════════════╣\n"
-            "║👁‍🗨 Команда:\n"
-            "╠═╣<code>{prefix}вл</code> - Чел. в бункере \n"
-            "╠═╣<code>{prefix}вл</code> <ид> - Чел. в игрока\n"
-            "╚═══════════════════"
-        ),
-        "capacity_template_premium": (
-            "<emoji document_id=5337046505129799969>📔</emoji> | Shadow_Ultimat > <b><i><u>BFGB</u></i></b> < @bfgbunker_bot\n"
-            "╔═╣════════════════╗\n"
-            "║  <emoji document_id=5442623686098056812>🔻</emoji>СТАТУС |<emoji document_id=5226813248900187912>💣</emoji>| BFGB<emoji document_id=5442623686098056812>🔻</emoji>\n"
-            "╠══════════════════╣\n"
-            "║~$ <emoji document_id=5380056101473492248>👜</emoji> Вместимость \n"
-            "╠══════════════════╣\n"
-            "{rooms}"
-            "╠══════════════════╣\n"
-            "║~$ <emoji document_id=5870772616305839506>👥</emoji> Людей сейчас: {current_people}\n"
-            "║~$ <emoji document_id=5870930636742595124>📊</emoji> Макс. мест: {max_capacity}\n"
-            "║~$ <emoji document_id=5877341274863832725>🚪</emoji> Открыто: {open_rooms}/18\n"
-            "╠══════════════════╣\n"
-            "║<emoji document_id=5873224578775387997>👁‍🗨</emoji> Команда:\n"
-            "╠═╣<code>{prefix}вл</code> - Чел. в бункере \n"
-            "╠═╣<code>{prefix}вл</code> <ид> - Чел. в игрока\n"
-            "╚═══════════════════"
-        ),
-        "room_active": "║~$ 🔹 K{room_num} - {capacity} чел.\n",
-        "room_inactive": "║~$ 🔻 K{room_num} - {capacity} чел.\n",
-        "room_active_premium": "║~$ <emoji document_id=5339513551524481000>🔵</emoji> K{room_num} - {capacity} чел.\n",
-        "room_inactive_premium": "║~$ <emoji document_id=5411225014148014586>🔴</emoji> K{room_num} - {capacity} чел.\n",
-        "id_template": (
-            "╔═╣════════════════╣\n"
-            "║  🔻СТАТУС |💣| BFGB🔻\n"
-            "╠══════════════════╣\n"
-            "║ ID : <code>{user_id}</code>\n"
-            "╚═╣════════════════╣"
-        ),
-        "id_template_premium": (
-            "╔═╣════════════════╣\n"
-            "║ <emoji document_id=5442623686098056812>🔻</emoji>СТАТУС |<emoji document_id=5226813248900187912>💣</emoji>| BFGB<emoji document_id=5442623686098056812>🔻</emoji>\n"
-            "╠══════════════════╣\n"
-            "║ ID : <code>{user_id}</code>\n"
-            "╚═╣════════════════╣"
-        ),
-        "profile_template": (
-            "📓  | Shadow_Ultimat > <b><i><u>BFGB</u></i></b> < @bfgbunker_bot\n"
-            "╔═╣════════════════╗\n"
-            "║  🔻СТАТУС |💣| BFGB🔻\n"
-            "╠══════════════════╣\n"
-            "║~$      🪪 Профиль 💻/👿\n"
-            "{admin_status}"
-            "{vip_status}"
-            "╠══════════════════╣\n"
-            "║~$ 👤 {username}\n"
-            "║~$ 🏢 Бункер №{bunker_id}\n"
-            "║\n"
-            "║~$ 💰 Баланс: {balance}\n"
-            "║~$ 🍾 Бутылок: {bottles}\n"
-            "║~$ 🪙 BB-coins: {bb_coins}\n"
-            "║~$ 🍪 GPoints: {gpoints}\n"
-            "║\n"
-            "║~$ 💵 {profit}\n"
-            "╠══════════════════╣\n"
-            "║👁‍🗨 Команда:\n"
-            "╠═╣<code>{prefix}б</code> - Мой профиль\n"
-            "╠═╣<code>{prefix}б</code> <ид> - Профиль игрока\n"
-            "╚═══════════════════"
-        ),
-        "profile_template_premium": (
-            "<emoji document_id=5337046505129799969>📔</emoji> | Shadow_Ultimat > <b><i><u>BFGB</u></i></b> < @bfgbunker_bot\n"
-            "╔═╣════════════════╗\n"
-            "║  <emoji document_id=5442623686098056812>🔻</emoji>СТАТУС |<emoji document_id=5226813248900187912>💣</emoji>| BFGB<emoji document_id=5442623686098056812>🔻</emoji>\n"
-            "╠══════════════════╣\n"
-            "║~$      <emoji document_id=5985817223749439505>✉️</emoji> Профиль <emoji document_id=5870748341150683538>💻</emoji>/<emoji document_id=5197225640104837259>👿</emoji>\n"
-            "{admin_status}"
-            "{vip_status}"
-            "╠══════════════════╣\n"
-            "║~$ <emoji document_id=5870994129244131212>👤</emoji> {username}\n"
-            "║~$ <emoji document_id=5967822972931542886>🏠</emoji> Бункер №{bunker_id}\n"
-            "║\n"
-            "║~$ <emoji document_id=5967390100357648692>💵</emoji> Баланс: {balance}\n"
-            "║~$ <emoji document_id=5967688845397855939>🥂</emoji> Бутылок: {bottles}\n"
-            "║~$ <emoji document_id=5987880246865565644>💰</emoji> BB-coins: {bb_coins}\n"
-            "║~$ <emoji document_id=5845945815549350824>🧹</emoji> GPoints: {gpoints}\n"
-            "║\n"
-            "║~$ <emoji document_id=5870478797593120516>💵</emoji> {profit}\n"
-            "╠══════════════════╣\n"
-            "║<emoji document_id=5873224578775387997>👁‍🗨</emoji> Команда:\n"
-            "╠═╣<code>{prefix}б</code> - Мой профиль\n"
-            "╠═╣<code>{prefix}б</code> <ид> - Профиль игрока\n"
-            "╚═══════════════════"
-        ),
-        "admin_tech": "║~$ 💻 Тех. Администратор 💻\n",
-        "admin_tech_premium": "║~$ <emoji document_id=5870748341150683538>💻</emoji> Тех. Администратор <emoji document_id=5870748341150683538>💻</emoji>\n",
-        "admin_chat": "║~$ 😈 Администратор оф.чата 😈\n",
-        "admin_chat_premium": "║~$ <emoji document_id=5197225640104837259>👿</emoji> Администратор оф.чата <emoji document_id=5197225640104837259>👿</emoji>\n",
-        "vip1": "║~$ ✨✨✨VIP1✨✨✨\n",
-        "vip1_premium": "║~$ <emoji document_id=5821051356173046126>⛈</emoji><emoji document_id=5821051356173046126>⛈</emoji><emoji document_id=5821051356173046126>⛈</emoji>VIP1<emoji document_id=5821051356173046126>⛈</emoji><emoji document_id=5821051356173046126>⛈</emoji><emoji document_id=5821051356173046126>⛈</emoji>\n",
-        "vip2": "║~$ 🔥🔥🔥VIP2🔥🔥🔥\n",
-        "vip2_premium": "║~$ <emoji document_id=5354839412175816000>🔥</emoji><emoji document_id=5354839412175816000>🔥</emoji><emoji document_id=5354839412175816000>🔥</emoji>VIP2<emoji document_id=5354839412175816000>🔥</emoji><emoji document_id=5354839412175816000>🔥</emoji><emoji document_id=5354839412175816000>🔥</emoji>\n",
-        "vip3": "║~$ 💎💎💎VIP3💎💎💎\n",
-        "vip3_premium": "║~$ <emoji document_id=5343636681473935403>💎</emoji><emoji document_id=5343636681473935403>💎</emoji><emoji document_id=5343636681473935403>💎</emoji>VIP3<emoji document_id=5343636681473935403>💎</emoji><emoji document_id=5343636681473935403>💎</emoji><emoji document_id=5343636681473935403>💎</emoji>\n",
-        "vip4": "║~$ ⭐️⭐️⭐️VIP4⭐️⭐️⭐️\n",
-        "vip4_premium": "║~$ <emoji document_id=5395851457884866228>🌟</emoji><emoji document_id=5395851457884866228>🌟</emoji><emoji document_id=5395851457884866228>🌟</emoji>VIP4<emoji document_id=5395851457884866228>🌟</emoji><emoji document_id=5395851457884866228>🌟</emoji><emoji document_id=5395851457884866228>🌟</emoji>\n",
-        "prefix_set": "Префикс успешно изменен на: `{}`",
-        "prefix_current": "Текущий префикс: `{}`",
-        "greenhouse_toggled": "Теплица: {}",
-        "garden_toggled": "Сад: {}",
-        "capacity_error": "Не удалось получить данные о бункере. Попробуйте позже.",
-        "id_error": "Ответьте на сообщение пользователя для получения его ID.",
-        "timeout_error": (
-            "👀 Извините но у вас нету подходящего вип статуса !\n"
-            "Пожалуйста купите вип статус минимум 3 уровня."
-        )
-    }
-
-    strings_ru = {
-        "prefix_set": "Префикс успешно изменен на: `{}`",
-        "prefix_current": "Текущий префикс: `{}`",
-        "greenhouse_toggled": "Теплица: {}",
-        "garden_toggled": "Сад: {}",
-        "shs_doc": "Показывает статус BFGB",
-        "prefix_doc": "Установите свой префикс!",
-        "greenhouse_doc": "Запускает/останавливает автофарм для теплицы",
-        "garden_doc": "Запускает/останавливает автофарм для сада",
-        "vl_doc": "Показывает количество людей в бункере и вместимость комнат",
-        "id_doc": "Показывает Telegram ID пользователя по реплею",
-        "profile_doc": "Показывает профиль игрока"
-    }
+    """Shadow_Ultimat - Auto-farming module for @bfgbunker_bot by @familiarrrrrr"""
+    strings = {"name": "ShadowUltimat", "status_on": "🟢", "status_off": "🔴"}
+    strings_ru = {"status_on": "🟢", "status_off": "🔴"}
 
     def __init__(self):
+        self._bot = "@bfgbunker_bot"
+        self._Shadow_Ultimat_channel = None
         self.config = loader.ModuleConfig(
             loader.ConfigValue(
-                "experience",
-                0,
-                "Текущий опыт для отображения в статусе",
-                validator=loader.validators.Integer(minimum=0),
+                "PeopleEnabled", True, "Enable auto-farming for people", validator=loader.validators.Boolean()
             ),
             loader.ConfigValue(
-                "prefix",
-                ".",
-                "Префикс для команд",
-                validator=loader.validators.String(),
+                "BonusEnabled", True, "Enable daily bonus collection", validator=loader.validators.Boolean()
+            ),
+            loader.ConfigValue(
+                "FuelEnabled", True, "Enable auto-farming for fuel", validator=loader.validators.Boolean()
+            ),
+            loader.ConfigValue(
+                "GreenhouseEnabled", True, "Enable auto-farming for greenhouse", validator=loader.validators.Boolean()
+            ),
+            loader.ConfigValue(
+                "WastelandEnabled", True, "Enable auto-farming for wasteland", validator=loader.validators.Boolean()
+            ),
+            loader.ConfigValue(
+                "GardenEnabled", True, "Enable auto-farming for garden", validator=loader.validators.Boolean()
+            ),
+            loader.ConfigValue(
+                "MineEnabled", True, "Enable auto-farming for mine", validator=loader.validators.Boolean()
+            ),
+            loader.ConfigValue(
+                "GuildEnabled", True, "Enable auto-farming for guild", validator=loader.validators.Boolean()
+            ),
+            loader.ConfigValue(
+                "StimulatorsToBuy", 1, "Number of stimulators to buy", validator=loader.validators.Integer(minimum=0)
+            ),
+            loader.ConfigValue(
+                "WeaponsToBuy", 1, "Number of weapons to buy", validator=loader.validators.Integer(minimum=0)
+            ),
+            loader.ConfigValue(
+                "MineCooldown", 6, "Cooldown between mining attempts (minutes)", validator=loader.validators.Integer(minimum=1)
+            ),
+            loader.ConfigValue(
+                "MineDiamond", True, "Mine diamonds automatically", validator=loader.validators.Boolean()
+            ),
+            loader.ConfigValue(
+                "SkipNonUranium", False, "Skip non-uranium resources", validator=loader.validators.Boolean()
+            ),
+            loader.ConfigValue(
+                "MineProbability", True, "Mine based on probability (80-100%)", validator=loader.validators.Boolean()
             )
         )
-        # Путь к JSON-файлу в папке ~/.hikka
-        self.data_file = os.path.join(pathlib.Path.home(), ".hikka", "shadow_ultimat_data.json")
-        # Создаем директорию ~/.hikka, если она не существует
-        os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
-        # Инициализация JSON-файла с начальными данными
-        self._init_data()
-
-    def _init_data(self):
-        """Инициализация JSON-файла с начальными данными"""
-        default_data = {
-            "greenhouse_active": False,
-            "garden_active": False
+        self._resources_map = {
+            range(0, 500): "картошка",
+            range(501, 2000): "морковь",
+            range(2001, 10000): "рис",
+            range(10001, 25000): "свекла",
+            range(25001, 60000): "огурец",
+            range(60001, 100000): "фасоль",
+            range(100001, 10**50): "помидор",
         }
-        if not os.path.exists(self.data_file):
-            with open(self.data_file, 'w', encoding='utf-8') as f:
-                json.dump(default_data, f, indent=4)
+        self._db = {
+            "people": self.pointer("people", {"enabled": True, "count": 0, "queue": 0, "max": 0}),
+            "bonus": self.pointer("bonus", {"enabled": True, "last_claim": None}),
+            "fuel": self.pointer("fuel", {"enabled": True, "current": 0, "max": 0}),
+            "greenhouse": self.pointer("greenhouse", {
+                "enabled": True, "xp": 0, "water": 0, "max_water": 0, "crop": "", 
+                "stock": {"картошка": 0, "морковь": 0, "рис": 0, "свекла": 0, "огурец": 0, "фасоль": 0, "помидор": 0}
+            }),
+            "wasteland": self.pointer("wasteland", {
+                "enabled": True, "time": "0 час. 0 мин.", "health": 100, "stimulators": 0, "weapons": 0, 
+                "caps": 0, "rating": 0, "death_date": None
+            }),
+            "garden": self.pointer("garden", {
+                "enabled": True, "level": 1, "status": "Пустует", 
+                "stock": {"яблоко": 0, "черешня": 0, "персик": 0, "мандарин": 0}
+            }),
+            "mine": self.pointer("mine", {
+                "enabled": True, "pickaxe": "Нет кирки", "durability": 0, "depth": 0, 
+                "stock": {"песок": 0, "уголь": 0, "железо": 0, "медь": 0, "серебро": 0, "алмаз": 0, "уран": 0}
+            }),
+            "guild": self.pointer("guild", {
+                "enabled": True, "auto_banks": False, "auto_bottles": False, 
+                "auto_guild_attack": False, "auto_boss_attack": False, "auto_purchase": False
+            })
+        }
 
-    def _load_data(self):
-        """Загрузка данных из JSON-файла"""
-        try:
-            with open(self.data_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            self._init_data()
-            return self._load_data()
-
-    def _save_data(self, data):
-        """Сохранение данных в JSON-файл"""
-        with open(self.data_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
-
-    def _get_data(self, key, default):
-        """Получение значения из JSON-файла"""
-        data = self._load_data()
-        return data.get(key, default)
-
-    def _set_data(self, key, value):
-        """Установка значения в JSON-файле"""
-        data = self._load_data()
-        data[key] = value
-        self._save_data(data)
-
-    @loader.command(ru_doc="Показывает статус BFGB")
-    async def shs(self, message: Message):
-        """Показывает статус BFGB"""
-        is_premium = (await self._client.get_me()).premium
-        greenhouse_active = self._get_data("greenhouse_active", False)
-        garden_active = self._get_data("garden_active", False)
-        prefix = self.config["prefix"]
-        experience = self.config["experience"]
-
-        template_key = "base_template_premium" if is_premium else "base_template"
-        greenhouse_key = ("greenhouse_active_premium" if is_premium else "greenhouse_active") if greenhouse_active else ("greenhouse_inactive_premium" if is_premium else "greenhouse_inactive")
-        garden_key = ("garden_active_premium" if is_premium else "garden_active") if garden_active else ("garden_inactive_premium" if is_premium else "garden_inactive")
-        
-        greenhouse_status = self.strings[greenhouse_key].format(experience=experience)
-        garden_status = self.strings[garden_key].format(experience=experience)
-
-        formatted_message = self.strings[template_key].format(
-            greenhouse_status=greenhouse_status,
-            garden_status=garden_status,
-            prefix=prefix,
-            experience=experience
+    async def client_ready(self):
+        self._Shadow_Ultimat_channel, _ = await utils.asset_channel(
+            self._client,
+            "Shadow_Ultimat_bfgb - чат",
+            "Этот чат предназначен для модуля Shadow_Ultimat от @familiarrrrrr",
+            silent=True,
+            archive=False,
+            _folder="heroku",
         )
+        await self.client(functions.channels.InviteToChannelRequest(self._Shadow_Ultimat_channel, [self._bot]))
+        await self.client(functions.channels.EditAdminRequest(
+            channel=self._Shadow_Ultimat_channel,
+            user_id=self._bot,
+            admin_rights=ChatAdminRights(ban_users=True, post_messages=True, edit_messages=True),
+            rank="BFGBshadow",
+        ))
 
-        await utils.answer(message, formatted_message)
+    async def _update_status_message(self, message: Message, section: str = None):
+        status = f"📓  | Shadow_Ultimat | ~ [ v777 ]\n"
+        status += "╔═╣════════════════╗\n"
+        status += "║  🔻СТАТУС |💣| BFGB🔻\n"
+        status += "╠══════════════════╣\n"
+        
+        if section in [None, "people"]:
+            status += f"║~$ 👫 Люди: {self.strings['status_on'] if self._db['people']['enabled'] else self.strings['status_off']}\n"
+        if section in [None, "bonus"]:
+            status += f"║~$ 🎁 Бонус: {self.strings['status_on'] if self._db['bonus']['enabled'] else self.strings['status_off']}\n"
+        if section in [None, "fuel"]:
+            status += f"║~$ 🛢 Бензин: {self.strings['status_on'] if self._db['fuel']['enabled'] else self.strings['status_off']}\n"
+        if section in [None, "greenhouse"]:
+            status += f"║~$ 🌱 Теплица: {self.strings['status_on'] if self._db['greenhouse']['enabled'] else self.strings['status_off']}\n"
+            if section == "greenhouse":
+                status += f"║~# ( {self._db['greenhouse']['crop'].capitalize()} | {self._db['greenhouse']['xp']} xp | {self._db['greenhouse']['water']} 💧 )\n"
+                status += "╠══════════════════╣\n"
+                status += "║~$ 📦 Склад:\n"
+                for crop, amount in self._db['greenhouse']['stock'].items():
+                    emoji = {"картошка": "🥔", "морковь": "🥕", "рис": "🍚", "свекла": "🍠", "огурец": "🥒", "фасоль": "🫘", "помидор": "🍅"}[crop]
+                    status += f"║~#    {emoji} {crop.capitalize()} - {amount}/шт.\n"
+        if section in [None, "wasteland"]:
+            status += f"║~$ 🏜 Пустошь: {self.strings['status_on'] if self._db['wasteland']['enabled'] else self.strings['status_off']}\n"
+            if section == "wasteland":
+                if self._db['wasteland']['death_date']:
+                    status += f"║~# ( 💉: {self._db['wasteland']['stimulators']} ) | ( 🔫: {self._db['wasteland']['weapons']} )\n"
+                    status += "╠══════════════════╣\n"
+                    status += f"║~$ ⚰ Умер: {self._db['wasteland']['death_date']}\n"
+                else:
+                    status += f"║~# ( 💉: {self._db['wasteland']['stimulators']} ) | ( 🔫: {self._db['wasteland']['weapons']} )\n"
+                    status += "╠══════════════════╣\n"
+                    status += f"║~$ ⏳ Время: {self._db['wasteland']['time']}\n"
+                    status += f"║~$ ❤️ Здоровье: {self._db['wasteland']['health']}%\n"
+                    status += f"║~$ 💉 Стимуляторов: {self._db['wasteland']['stimulators']} шт.\n"
+                    status += f"║~$ 🔫 Оружия: {self._db['wasteland']['weapons']} ед.\n"
+                    status += "╠══════════════════╣\n"
+                    status += f"║~$ 💰 Крышек: {self._db['wasteland']['caps']} шт.\n"
+                    status += f"║~$ 🏆 Рейтинга: {self._db['wasteland']['rating']}\n"
+        if section in [None, "garden"]:
+            status += f"║~$ 🌳 Сад: {self.strings['status_on'] if self._db['garden']['enabled'] else self.strings['status_off']}\n"
+            if section == "garden":
+                status += f"║~$ ✨ Рост: ( {self._db['garden']['status']} )\n"
+                status += "╠══════════════════╣\n"
+                status += "║~$ 📦 Склад:\n"
+                for fruit, amount in self._db['garden']['stock'].items():
+                    emoji = {"яблоко": "🍏", "черешня": "🍒", "персик": "🍑", "мандарин": "🍊"}[fruit]
+                    status += f"║~#    {emoji} {fruit.capitalize()} - {amount}/шт.\n"
+        if section in [None, "mine"]:
+            status += f"║~$ ⛏ Шахта: {self.strings['status_on'] if self._db['mine']['enabled'] else self.strings['status_off']}\n"
+            if section == "mine":
+                pickaxe_level = {"Нет кирки": 1, "Каменная кирка": 1, "Железная кирка": 2, "Алмазная кирка": 3}.get(self._db['mine']['pickaxe'], 1)
+                status += f"║~$ ⛏ ( {pickaxe_level} | 2 | 3 )\n"
+                status += f"║~$ ✨ КД: {self.config['MineCooldown']} минут\n"
+                status += f"║~$ ⚙️ Прочность: {self._db['mine']['durability']}\n"
+                status += f"║~$ 📉 Высота: {self._db['mine']['depth']} м.\n"
+                status += "╠══════════════════╣\n"
+                status += "║~$ 📦 Склад:\n"
+                for resource, amount in self._db['mine']['stock'].items():
+                    emoji = {"песок": "🏜️", "уголь": "◾️", "железо": "🚂", "медь": "🟠", "серебро": "🥈", "алмаз": "💎", "уран": "☢️"}[resource]
+                    status += f"║~#    {emoji} {resource.capitalize()} - {amount}/кг.\n"
+        if section in [None, "guild"]:
+            status += f"║~$ 🏛 Гильдия: {self.strings['status_on'] if self._db['guild']['enabled'] else self.strings['status_off']}\n"
+            if section == "guild":
+                status += f"║~$ ⚙ Авто-банки: {'✔️' if self._db['guild']['auto_banks'] else '✖️'}\n"
+                status += f"║~$ ⚙ Авто-бутылки: {'✔️' if self._db['guild']['auto_bottles'] else '✖️'}\n"
+                status += f"║~$ ⚙ Авто-атака-ги: {'✔️' if self._db['guild']['auto_guild_attack'] else '✖️'}\n"
+                status += f"║~$ ⚙ Авто-атака-босса: {'✔️' if self._db['guild']['auto_boss_attack'] else '✖️'}\n"
+                status += f"║~$ ⚙ Авто-закуп: {'✔️' if self._db['guild']['auto_purchase'] else '✖️'}\n"
 
-    @loader.command(ru_doc="Установите свой префикс!")
-    async def prefix(self, message: Message):
-        """Устанавливает или показывает текущий префикс"""
-        args = utils.get_args_raw(message)
-        if args:
-            self.config["prefix"] = args
-            await utils.answer(message, self.strings["prefix_set"].format(args))
-        else:
-            await utils.answer(message, self.strings["prefix_current"].format(self.config["prefix"]))
+        status += "╠══════════════════╣\n"
+        status += "║👁‍🗨 Команды:\n"
+        if section in [None, "people"]:
+            status += f"╠═╣<code>.люди</code> - вкл/выкл\n"
+        if section in [None, "bonus"]:
+            status += f"╠═╣<code>.бонус</code> - вкл/выкл\n"
+        if section in [None, "fuel"]:
+            status += f"╠═╣<code>.бензин</code> - вкл/выкл\n"
+        if section in [None, "greenhouse"]:
+            status += f"╠═╣<code>.2теплица</code> - вкл/выкл\n"
+        if section in [None, "wasteland"]:
+            status += f"╠═╣<code>.2пустошь</code> - вкл/выкл\n"
+        if section in [None, "garden"]:
+            status += f"╠═╣<code>.2сад</code> - вкл/выкл\n"
+        if section in [None, "mine"]:
+            status += f"╠═╣<code>.2шахта</code> - вкл/выкл\n"
+        if section in [None, "guild"]:
+            status += f"╠═╣<code>.2гильдия</code> - вкл/выкл\n"
+        status += "╚═══════════════════"
 
-    @loader.command(ru_doc="Запускает/останавливает автофарм для теплицы")
-    async def теплица(self, message: Message):
-        """Запускает/останавливает автофарм для теплицы"""
-        current_state = self._get_data("greenhouse_active", False)
-        new_state = not current_state
-        self._set_data("greenhouse_active", new_state)
-        state_text = "включена" if new_state else "выключена"
-        await utils.answer(message, self.strings["greenhouse_toggled"].format(state_text))
+        buttons = [
+            [
+                {"text": "Теплица", "callback_data": "greenhouse"},
+                {"text": "Пустошь", "callback_data": "wasteland"},
+                {"text": "Сад", "callback_data": "garden"},
+                {"text": "Шахта", "callback_data": "mine"},
+                {"text": "Гильдия", "callback_data": "guild"}
+            ]
+        ] if section is None else [[{"text": "Назад", "callback_data": "back"}]]
 
-    @loader.command(ru_doc="Запускает/останавливает автофарм для сада")
-    async def сад(self, message: Message):
-        """Запускает/останавливает автофарм для сада"""
-        current_state = self._get_data("garden_active", False)
-        new_state = not current_state
-        self._set_data("garden_active", new_state)
-        state_text = "включен" if new_state else "выключен"
-        await utils.answer(message, self.strings["garden_toggled"].format(state_text))
+        await utils.answer(message, status, reply_markup=buttons)
 
-    @loader.command(ru_doc="Показывает количество людей в бункере и вместимость комнат")
-    async def вл(self, message: Message):
-        """Показывает количество людей в бункере и вместимость комнат"""
-        is_premium = (await self._client.get_me()).premium
-        args = utils.get_args_raw(message)
+    @loader.command(ru_doc="Показывает основной список авто-фарма")
+    async def shcmd(self, message: Message):
+        """Show main auto-farming status"""
+        await self._update_status_message(message)
 
-        async with self._client.conversation("@bfgbunker_bot") as conv:
-            if args:
-                try:
-                    user_id = int(args)
-                    await conv.send_message(f"Узнать о {user_id}")
-                except ValueError:
-                    await utils.answer(message, self.strings["capacity_error"])
-                    return
-            else:
+    @loader.command(ru_doc="Вкл/выкл авто-фарм людей")
+    async def людиcmd(self, message: Message):
+        """Toggle people auto-farming"""
+        self._db['people']['enabled'] = not self._db['people']['enabled']
+        await utils.answer(message, f"Авто-фарм людей {'включен' if self._db['people']['enabled'] else 'выключен'}")
+        await self._update_status_message(message)
+
+    @loader.command(ru_doc="Вкл/выкл ежедневный бонус")
+    async def бонусcmd(self, message: Message):
+        """Toggle daily bonus collection"""
+        self._db['bonus']['enabled'] = not self._db['bonus']['enabled']
+        await utils.answer(message, f"Ежедневный бонус {'включен' if self._db['bonus']['enabled'] else 'выключен'}")
+        await self._update_status_message(message)
+
+    @loader.command(ru_doc="Вкл/выкл авто-фарм бензина")
+    async def бензинcmd(self, message: Message):
+        """Toggle fuel auto-farming"""
+        self._db['fuel']['enabled'] = not self._db['fuel']['enabled']
+        await utils.answer(message, f"Авто-фарм бензина {'включен' if self._db['fuel']['enabled'] else 'выключен'}")
+        await self._update_status_message(message)
+
+    @loader.command(ru_doc="Вкл/выкл авто-фарм теплицы")
+    async def теплицаcmd(self, message: Message):
+        """Toggle greenhouse auto-farming"""
+        self._db['greenhouse']['enabled'] = not self._db['greenhouse']['enabled']
+        await utils.answer(message, f"Авто-фарм теплицы {'включен' if self._db['greenhouse']['enabled'] else 'выключен'}")
+        await self._update_status_message(message, "greenhouse")
+
+    @loader.command(ru_doc="Вкл/выкл авто-фарм пустоши")
+    async def пустошьcmd(self, message: Message):
+        """Toggle wasteland auto-farming"""
+        self._db['wasteland']['enabled'] = not self._db['wasteland']['enabled']
+        await utils.answer(message, f"Авто-фарм пустоши {'включен' if self._db['wasteland']['enabled'] else 'выключен'}")
+        await self._update_status_message(message, "wasteland")
+
+    @loader.command(ru_doc="Вкл/выкл авто-фарм сада")
+    async def садcmd(self, message: Message):
+        """Toggle garden auto-farming"""
+        self._db['garden']['enabled'] = not self._db['garden']['enabled']
+        await utils.answer(message, f"Авто-фарм сада {'включен' if self._db['garden']['enabled'] else 'выключен'}")
+        await self._update_status_message(message, "garden")
+
+    @loader.command(ru_doc="Вкл/выкл авто-фарм шахты")
+    async def шахтаcmd(self, message: Message):
+        """Toggle mine auto-farming"""
+        self._db['mine']['enabled'] = not self._db['mine']['enabled']
+        await utils.answer(message, f"Авто-фарм шахты {'включен' if self._db['mine']['enabled'] else 'выключен'}")
+        await self._update_status_message(message, "mine")
+
+    @loader.command(ru_doc="Вкл/выкл авто-фарм гильдии")
+    async def гильдияcmd(self, message: Message):
+        """Toggle guild auto-farming"""
+        self._db['guild']['enabled'] = not self._db['guild']['enabled']
+        await utils.answer(message, f"Авто-фарм гильдии {'включен' if self._db['guild']['enabled'] else 'выключен'}")
+        await self._update_status_message(message, "guild")
+
+    @loader.on(loader.CallbackQuery("greenhouse"))
+    async def greenhouse_callback(self, call):
+        async with self._client.conversation(self._bot) as conv:
+            await conv.send_message("Моя теплица")
+            response = await conv.get_response()
+            await self._parse_greenhouse(response)
+        await self._update_status_message(call.message, "greenhouse")
+        await call.answer()
+
+    @loader.on(loader.CallbackQuery("wasteland"))
+    async def wasteland_callback(self, call):
+        async with self._client.conversation(self._bot) as conv:
+            await conv.send_message("Пустошь")
+            response = await conv.get_response()
+            await self._parse_wasteland(response)
+        await self._update_status_message(call.message, "wasteland")
+        await call.answer()
+
+    @loader.on(loader.CallbackQuery("garden"))
+    async def garden_callback(self, call):
+        async with self._client.conversation(self._bot) as conv:
+            await conv.send_message("/garden")
+            response = await conv.get_response()
+            await self._parse_garden(response)
+        await self._update_status_message(call.message, "garden")
+        await call.answer()
+
+    @loader.on(loader.CallbackQuery("mine"))
+    async def mine_callback(self, call):
+        async with self._client.conversation(self._bot) as conv:
+            await conv.send_message("/mine")
+            response = await conv.get_response()
+            await self._parse_mine(response)
+        await self._update_status_message(call.message, "mine")
+        await call.answer()
+
+    @loader.on(loader.CallbackQuery("guild"))
+    async def guild_callback(self, call):
+        await self._update_status_message(call.message, "guild")
+        await call.answer()
+
+    @loader.on(loader.CallbackQuery("back"))
+    async def back_callback(self, call):
+        await self._update_status_message(call.message)
+        await call.answer()
+
+    async def _parse_people(self, message: Message):
+        text = message.raw_text
+        people_match = re.search(r"Людей в бункере: (\d+)", text)
+        queue_match = re.search(r"Людей в очереди в бункер: (\d+)/(\d+)", text)
+        max_match = re.search(r"Макс\. вместимость людей: (\d+)", text)
+        if people_match and queue_match and max_match:
+            self._db['people']['count'] = int(people_match.group(1))
+            self._db['people']['queue'] = int(queue_match.group(1))
+            self._db['people']['max'] = int(max_match.group(1))
+            if self._db['people']['enabled'] and self._db['people']['queue'] > 0:
+                async with self._client.conversation(self._bot) as conv:
+                    await conv.send_message(f"Впустить {self._db['people']['max'] - self._db['people']['count']}")
+                    await conv.get_response()
+
+    async def _parse_bonus(self, message: Message):
+        if "ежедневный бонус" in message.raw_text:
+            self._db['bonus']['last_claim'] = datetime.now()
+
+    async def _parse_fuel(self, message: Message):
+        text = message.raw_text
+        fuel_match = re.search(r"Твой текущий запас бензина: (\d+)/(\d+) л\.", text)
+        if fuel_match:
+            self._db['fuel']['current'] = int(fuel_match.group(1))
+            self._db['fuel']['max'] = int(fuel_match.group(2))
+            if message.reply_markup and self._db['fuel']['enabled']:
+                for row in message.reply_markup.rows:
+                    for button in row.buttons:
+                        if button.data.startswith(b"buy_fuell_"):
+                            await message.click(data=button.data)
+                            break
+
+    async def _parse_greenhouse(self, message: Message):
+        text = message.raw_text
+        xp_match = re.search(r"Опыт: (\d+)", text)
+        water_match = re.search(r"Вода: (\d+)/(\d+) л\.", text)
+        crop_match = re.search(r"Тебе доступна: (\S+)", text)
+        stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
+        if xp_match and water_match and crop_match:
+            self._db['greenhouse']['xp'] = int(xp_match.group(1))
+            self._db['greenhouse']['water'] = int(water_match.group(1))
+            self._db['greenhouse']['max_water'] = int(water_match.group(2))
+            self._db['greenhouse']['crop'] = crop_match.group(1)
+            if self._db['greenhouse']['enabled'] and self._db['greenhouse']['water'] > 0:
+                for xp_range, crop in self._resources_map.items():
+                    if self._db['greenhouse']['xp'] in xp_range and crop == self._db['greenhouse']['crop'].lower():
+                        async with self._client.conversation(self._bot) as conv:
+                            await conv.send_message(f"Вырастить {crop}")
+                            response = await conv.get_response()
+                            if "вырастил" in response.raw_text.lower():
+                                self._db['greenhouse']['stock'][crop] += 1
+                                self._db['greenhouse']['water'] -= 1
+                        break
+
+    async def _parse_wasteland(self, message: Message):
+        text = message.raw_text
+        if "буря закончится" in text:
+            self._db['wasteland']['death_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        elif "Время в пустоши" in text:
+            time_match = re.search(r"Время в пустоши: ([\d\sчас\.мин\.]+)", text)
+            health_match = re.search(r"Здоровье: (\d+)%", text)
+            stimulators_match = re.search(r"Стимуляторов: (\d+) шт\.", text)
+            weapons_match = re.search(r"Оружия: (\d+) ед\.", text)
+            caps_match = re.search(r"Найдено крышек: (\d+) шт\.", text)
+            rating_match = re.search(r"Получено рейтинга: (\d+)", text)
+            if time_match and health_match and stimulators_match and weapons_match and caps_match and rating_match:
+                self._db['wasteland']['time'] = time_match.group(1)
+                self._db['wasteland']['health'] = int(health_match.group(1))
+                self._db['wasteland']['stimulators'] = int(stimulators_match.group(1))
+                self._db['wasteland']['weapons'] = int(weapons_match.group(1))
+                self._db['wasteland']['caps'] = int(caps_match.group(1))
+                self._db['wasteland']['rating'] = int(rating_match.group(1))
+                self._db['wasteland']['death_date'] = None
+                if self._db['wasteland']['health'] < 20 and message.reply_markup:
+                    for row in message.reply_markup.rows:
+                        for button in row.buttons:
+                            if button.data.startswith(b"end_research_"):
+                                await message.click(data=button.data)
+                                break
+
+    async def _parse_garden(self, message: Message):
+        text = message.raw_text
+        level_match = re.search(r"Уровень: (\d+)", text)
+        status_match = re.search(r"Статус сада:\s*([\s\S]*?)(?=\n\n|$)", text)
+        stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
+        if level_match and status_match:
+            self._db['garden']['level'] = int(level_match.group(1))
+            self._db['garden']['status'] = status_match.group(1).strip()
+            if stock_match:
+                stock_text = stock_match.group(1).strip()
+                for fruit in self._db['garden']['stock']:
+                    amount = re.search(rf"{fruit.capitalize()} - (\d+) шт\.", stock_text)
+                    self._db['garden']['stock'][fruit] = int(amount.group(1)) if amount else 0
+
+    async def _parse_mine(self, message: Message):
+        text = message.raw_text
+        pickaxe_match = re.search(r"Кирка: ([^\n]+)", text)
+        durability_match = re.search(r"Прочность: (\d+)", text)
+        depth_match = re.search(r"Уровень погружения: (\d+) м\.", text)
+        stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
+        if pickaxe_match and durability_match and depth_match:
+            self._db['mine']['pickaxe'] = pickaxe_match.group(1)
+            self._db['mine']['durability'] = int(durability_match.group(1))
+            self._db['mine']['depth'] = int(depth_match.group(1))
+            if stock_match:
+                stock_text = stock_match.group(1).strip()
+                for resource in self._db['mine']['stock']:
+                    amount = re.search(rf"{resource.capitalize()} - (\d+) кг\.", stock_text)
+                    self._db['mine']['stock'][resource] = int(amount.group(1)) if amount else 0
+            if self._db['mine']['enabled'] and self._db['mine']['durability'] == 0:
+                async with self._client.conversation(self._bot) as conv:
+                    await conv.send_message("Б")
+                    m = await conv.get_response()
+                    balance = int("".join(s for s in m.raw_text.split("Баланс:")[1].split('/')[0].strip() if s.isdigit()))
+                    if balance >= 1000000:
+                        await conv.send_message("Купить алмазную кирку")
+                    elif balance >= 200000:
+                        await conv.send_message("Купить железную кирку")
+                    elif balance >= 30000:
+                        await conv.send_message("Купить каменную кирку")
+                    await conv.get_response()
+
+    async def _mine(self):
+        async with self._client.conversation(self._bot) as conv:
+            await asyncio.sleep(1.5)
+            await conv.send_message("копать")
+            m = await conv.get_response()
+            if "у тебя нет кирки" in m.raw_text:
+                await asyncio.sleep(1.5)
                 await conv.send_message("Б")
-            
-            try:
-                response = await asyncio.wait_for(conv.get_response(), timeout=5)
-            except asyncio.TimeoutError:
-                await utils.answer(message, self.strings["timeout_error"])
+                m = await conv.get_response()
+                balance = int("".join(s for s in m.raw_text.split("Баланс:")[1].split('/')[0].strip() if s.isdigit()))
+                if balance < 30000:
+                    return
+                await asyncio.sleep(1.5)
+                if balance >= 1000000:
+                    await conv.send_message("Купить алмазную кирку")
+                elif balance >= 200000:
+                    await conv.send_message("Купить железную кирку")
+                else:
+                    await conv.send_message("Купить каменную кирку")
+                await conv.get_response()
+                await asyncio.sleep(1.5)
+                await conv.send_message("копать")
+                m = await conv.get_response()
+
+            if 'отдохнёт' in m.raw_text:
                 return
 
-        text = response.text
-        current_people = re.search(r"🧍 Людей в бункере: <b>(\d+)</b>", text)
-        max_capacity = re.search(r"Макс\. вместимость людей: (\d+)", text)
-        rooms_section = re.search(r"🏠 Комнаты:([\s\S]*?)(?=(💵 Общая прибыль|💵 Бункер не работает!|\Z))", text)
+            resources_result = m.raw_text.split("ты нашёл")
+            resources = 'Воздух'
+            if len(resources_result) > 1:
+                resources_text = resources_result[1].split(' ')[1:]
+                resources = ' '.join(resources_text).split('.')[0]
 
-        if not (current_people and max_capacity and rooms_section):
-            logger.error(f"Failed to parse capacity data. Response: {text}")
-            await utils.answer(message, self.strings["capacity_error"])
-            return
+            probability_result = m.raw_text.split("вероятностью")
+            probability = 0
+            if len(probability_result) > 1:
+                probability_text = probability_result[1]
+                probability = int("".join(s for s in probability_text.split('%')[0].strip() if s.isdigit()))
 
-        current_people = int(current_people.group(1))
-        max_capacity = int(max_capacity.group(1))
-        rooms_text = rooms_section.group(1).strip()
-
-        base_capacities = [6, 6, 6, 6, 12, 20, 32, 52, 92, 144, 234, 380, 520, 750, 1030, 1430, 2020, 3520]
-        rooms = []
-        room_lines = rooms_text.split("\n")
-        open_rooms = 0
-        for line in room_lines:
-            line = line.strip()
-            if not line:
-                continue
-            match = re.match(r"\s*(\d+️⃣)\s*(❗️)?\s*([^\d]+)\s*(\d+)\s*ур\.|.*'(.+?)'\s*Цена:\s*(\d+)\s*крышек", line)
-            if match:
-                if match.group(4):  # Room with level
-                    room_num = int(match.group(1).replace("️⃣", ""))
-                    warning = bool(match.group(2))
-                    level = int(match.group(4))
-                    capacity = base_capacities[room_num - 1] + 2 * (level - 1)
-                    rooms.append({"num": room_num, "warning": warning, "capacity": capacity})
-                    open_rooms += 1
-                elif match.group(5):  # Room available for purchase
-                    room_num = int(match.group(1).replace("️⃣", ""))
-                    capacity = base_capacities[room_num - 1]  # Base capacity for unbuilt room
-                    rooms.append({"num": room_num, "warning": True, "capacity": capacity})
-                    open_rooms += 1
-
-        rooms_str = ""
-        for room in rooms:
-            room_num = room["num"]
-            capacity = room["capacity"]
-            warning = room["warning"]
-            room_key = "room_inactive_premium" if is_premium and warning else "room_active_premium" if is_premium else "room_inactive" if warning else "room_active"
-            rooms_str += self.strings[room_key].format(room_num=room_num, capacity=capacity)
-
-        template_key = "capacity_template_premium" if is_premium else "capacity_template"
-        formatted_message = self.strings[template_key].format(
-            rooms=rooms_str,
-            current_people=current_people,
-            max_capacity=max_capacity,
-            open_rooms=open_rooms,
-            prefix=self.config["prefix"]
-        )
-
-        await utils.answer(message, formatted_message)
-
-    @loader.command(ru_doc="Показывает Telegram ID пользователя по реплею")
-    async def ид(self, message: Message):
-        """Показывает Telegram ID пользователя по реплею"""
-        is_premium = (await self._client.get_me()).premium
-        reply = await message.get_reply_message()
-        
-        if not reply:
-            await utils.answer(message, self.strings["id_error"])
-            return
-
-        user_id = reply.sender_id
-        template_key = "id_template_premium" if is_premium else "id_template"
-        formatted_message = self.strings[template_key].format(user_id=user_id)
-        
-        await utils.answer(message, formatted_message)
-
-    @loader.command(ru_doc="Показывает профиль игрока")
-    async def б(self, message: Message):
-        """Показывает профиль игрока"""
-        is_premium = (await self._client.get_me()).premium
-        args = utils.get_args_raw(message)
-
-        async with self._client.conversation("@bfgbunker_bot") as conv:
-            if args:
-                try:
-                    user_id = int(args)
-                    await conv.send_message(f"Узнать о {user_id}")
-                except ValueError:
-                    await utils.answer(message, self.strings["capacity_error"])
-                    return
+            if self.config["MineDiamond"] and ("ты нашёл 💎 Алмаз." in m.message or probability == 100):
+                await asyncio.sleep(1.5)
+                await m.click(0)
+                m = await conv.get_edit()
+                if "Прочность твоей кирки уменьшена" in m.text:
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
+                else:
+                    await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
+            elif self.config["SkipNonUranium"] and "Уран" not in resources:
+                await asyncio.sleep(1.5)
+                await m.click(1)
+                await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты пропустил {resources} с шансом {probability}%\n#Пропуск")
+            elif self.config["MineProbability"] and 80 <= probability <= 100:
+                await asyncio.sleep(1.5)
+                await m.click(0)
+                m = await conv.get_edit()
+                if "Прочность твоей кирки уменьшена" in m.text:
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
+                else:
+                    await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
             else:
-                await conv.send_message("Б")
-            
-            try:
-                response = await asyncio.wait_for(conv.get_response(), timeout=5)
-            except asyncio.TimeoutError:
-                await utils.answer(message, self.strings["timeout_error"])
-                return
+                await asyncio.sleep(1.5)
+                await m.click(0)
+                m = await conv.get_edit()
+                if "Прочность твоей кирки уменьшена" in m.text:
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
+                else:
+                    await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
 
-        text = response.text
-        logger.debug(f"Bot response: {text}")  # Log raw response for debugging
+    @loader.loop(60)
+    async def auto_farm(self):
+        if self._db['people']['enabled']:
+            async with self._client.conversation(self._bot) as conv:
+                await conv.send_message("/me")
+                response = await conv.get_response()
+                await self._parse_people(response)
 
-        # Extract profile data with more flexible regex
-        username = re.search(r"🙎‍♂️ (.+?)(?=\n|$)", text)
-        bunker_id = re.search(r"🏢 Бункер №(\d+)", text)
-        balance = re.search(r"💰 Баланс: ([\d,]+/[\d,]+(?:kk)?\s*кр\.)", text)
-        bottles = re.search(r"🍾 Бутылок: (\d+)", text) or re.search(r"🥂 Бутылок: (\d+)", text)
-        bb_coins = re.search(r"🪙 BB-coins: (\d+)", text) or re.search(r"💰 BB-coins: (\d+)", text)
-        gpoints = re.search(r"🍪 GPoints: (\d+)", text) or re.search(r"🧹 GPoints: (\d+)", text)
-        profit = re.search(r"💵 (.+?)(?=\n📅|\n🧍|\Z)", text)
+        if self._db['bonus']['enabled']:
+            last_claim = self._db['bonus']['last_claim']
+            if not last_claim or (datetime.now() - last_claim) >= timedelta(hours=24):
+                async with self._client.conversation(self._bot) as conv:
+                    await conv.send_message("/bonus")
+                    response = await conv.get_response()
+                    await self._parse_bonus(response)
 
-        # Check if critical fields are missing
-        if not (username and bunker_id):
-            logger.error(f"Failed to parse critical fields. Username: {username}, Bunker ID: {bunker_id}")
-            await utils.answer(message, self.strings["capacity_error"])
-            return
+        if self._db['fuel']['enabled']:
+            async with self._client.conversation(self._bot) as conv:
+                await conv.send_message("/fuel")
+                response = await conv.get_response()
+                await self._parse_fuel(response)
 
-        # Assign default values for optional fields
-        username = username.group(1)
-        bunker_id = bunker_id.group(1)
-        balance = balance.group(1) if balance else "0/0 кр."
-        bottles = bottles.group(1) if bottles else "0"
-        bb_coins = bb_coins.group(1) if bb_coins else "0"
-        gpoints = gpoints.group(1) if gpoints else "0"
-        profit = profit.group(1) if profit else "Нет данных о прибыли"
+        if self._db['greenhouse']['enabled']:
+            async with self._client.conversation(self._bot) as conv:
+                await conv.send_message("Моя теплица")
+                response = await conv.get_response()
+                await self._parse_greenhouse(response)
 
-        # Extract admin and VIP statuses
-        admin_status = ""
-        if "💻 Тех. Администратор 💻" in text:
-            admin_status = self.strings["admin_tech_premium" if is_premium else "admin_tech"]
-        elif "😈 Администратор оф.чата 😈" in text:
-            admin_status = self.strings["admin_chat_premium" if is_premium else "admin_chat"]
+        if self._db['wasteland']['enabled']:
+            if not self._db['wasteland']['death_date']:
+                async with self._client.conversation(self._bot) as conv:
+                    if self.config["StimulatorsToBuy"] > 0:
+                        await conv.send_message(f"Купить стимуляторы {self.config['StimulatorsToBuy']}")
+                        await conv.get_response()
+                    if self.config["WeaponsToBuy"] > 0:
+                        await conv.send_message(f"Купить оружие {self.config['WeaponsToBuy']}")
+                        await conv.get_response()
+                    await conv.send_message("Исследовать пустошь")
+                    response = await conv.get_response()
+                    if "укажи количество стимуляторов" in response.raw_text:
+                        stimulators = min(int(re.search(r"У тебя: (\d+)", response.raw_text).group(1)), int(re.search(r"Максимум можешь дать: (\d+)", response.raw_text).group(1)))
+                        await conv.send_message(str(stimulators))
+                        response = await conv.get_response()
+                    if "укажи количество оружия" in response.raw_text:
+                        weapons = min(int(re.search(r"У тебя: (\d+)", response.raw_text).group(1)), int(re.search(r"Максимум можешь дать: (\d+)", response.raw_text).group(1)))
+                        await conv.send_message(str(weapons))
+                        await conv.get_response()
+                    await asyncio.sleep(15 * 60)  # Check every 15 minutes
+                    await conv.send_message("Пустошь")
+                    response = await conv.get_response()
+                    await self._parse_wasteland(response)
 
-        vip_status = ""
-        if "⭐️⭐️⭐️VIP4⭐️⭐️⭐️" in text:
-            vip_status = self.strings["vip4_premium" if is_premium else "vip4"]
-        elif "💎💎💎VIP3💎💎💎" in text:
-            vip_status = self.strings["vip3_premium" if is_premium else "vip3"]
-        elif re.search(r"🔥🔥🔥?VIP2🔥🔥🔥?", text):  # Handle both 🔥🔥VIP2🔥🔥 and 🔥🔥🔥VIP2🔥🔥🔥
-            vip_status = self.strings["vip2_premium" if is_premium else "vip2"]
-        elif "⚡️VIP1⚡️" in text:
-            vip_status = self.strings["vip1_premium" if is_premium else "vip1"]
+        if self._db['garden']['enabled']:
+            async with self._client.conversation(self._bot) as conv:
+                await conv.send_message("/garden")
+                response = await conv.get_response()
+                await self._parse_garden(response)
 
-        template_key = "profile_template_premium" if is_premium else "profile_template"
-        formatted_message = self.strings[template_key].format(
-            admin_status=admin_status,
-            vip_status=vip_status,
-            username=username,
-            bunker_id=bunker_id,
-            balance=balance,
-            bottles=bottles,
-            bb_coins=bb_coins,
-            gpoints=gpoints,
-            profit=profit,
-            prefix=self.config["prefix"]
-        )
+        if self._db['mine']['enabled']:
+            await self._mine()
+            await asyncio.sleep(self.config["MineCooldown"] * 60)
 
-        await utils.answer(message, formatted_message)
+        if self._db['guild']['enabled']:
+            # Placeholder for guild auto-farming logic
+            pass
