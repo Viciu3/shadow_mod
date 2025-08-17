@@ -18,8 +18,8 @@ class ShadowUltimat(loader.Module):
     def __init__(self):
         self._bot = "@bfgbunker_bot"
         self._Shadow_Ultimat_channel = None
-        self._lock = asyncio.Lock()  # Lock for exclusive conversation
-        self._status_message_id = None  # Для хранения ID сообщения .sh
+        self._lock = asyncio.Lock()
+        self._status_message_id = None
         self.config = loader.ModuleConfig(
             loader.ConfigValue("PeopleEnabled", True, "Enable auto-farming for people", validator=loader.validators.Boolean()),
             loader.ConfigValue("BonusEnabled", True, "Enable daily bonus collection", validator=loader.validators.Boolean()),
@@ -50,7 +50,6 @@ class ShadowUltimat(loader.Module):
         }
 
     async def client_ready(self):
-        # Initialize database
         try:
             self._db = {
                 "people": {"enabled": True, "count": 0, "queue": 0, "max": 0},
@@ -86,7 +85,6 @@ class ShadowUltimat(loader.Module):
         except Exception as e:
             await self.client.send_message("me", f"Failed to initialize database: {str(e)}")
 
-        # Set up channel
         try:
             self._Shadow_Ultimat_channel, _ = await utils.asset_channel(
                 self._client,
@@ -107,7 +105,6 @@ class ShadowUltimat(loader.Module):
         except Exception as e:
             await self.client.send_message("me", f"Failed to initialize channel: {str(e)}")
 
-        # Start auto-farm loop
         try:
             asyncio.create_task(self.main_loop())
             await self.client.send_message(self._Shadow_Ultimat_channel, "Auto-farm loop started")
@@ -243,7 +240,7 @@ class ShadowUltimat(loader.Module):
             status += f"╠═╣<code>{prefix}гильдия</code> - вкл/выкл\n"
         if section in [None, "bottles"]:
             status += f"╠═╣<code>{prefix}bottles</code> - вкл/выкл обмен бутылок\n"
-        status += f"╠═╣<code>{prefix}prefix</code> [префикс] - установить префикс\n"
+        status += f"╠═╣<code>{prefix}prefixcmd [префикс]</code> - установить префикс\n"
         status += "╚═══════════════════"
         return status
 
@@ -262,7 +259,7 @@ class ShadowUltimat(loader.Module):
 
         try:
             new_message = await utils.answer(message, await self._update_status_message_text(section), reply_markup=buttons)
-            self._status_message_id = new_message.id  # Сохраняем ID сообщения
+            self._status_message_id = getattr(new_message, 'message_id', None) or getattr(new_message, 'id', None)
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Status message updated for section: {section or 'main'}, ID: {self._status_message_id}")
         except Exception as e:
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Failed to update status message: {str(e)}")
@@ -377,13 +374,12 @@ class ShadowUltimat(loader.Module):
     async def callback_watcher(self, message: Message):
         try:
             if not message.reply_markup or message.id != self._status_message_id:
-                await self.client.send_message(self._Shadow_Ultimat_channel, f"Watcher: Ignored message {message.id}, expected {self._status_message_id}")
-                return
+                return  # Тихо игнорируем сообщения без кнопок или с неверным ID
 
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Watcher: Processing buttons for message {message.id}")
+            valid_buttons = {b"greenhouse", b"wasteland", b"garden", b"mine", b"guild", b"back"}
             for row in message.reply_markup.rows:
                 for button in row.buttons:
-                    if hasattr(button, 'data') and button.data in [b"greenhouse", b"wasteland", b"garden", b"mine", b"guild", b"back"]:
+                    if hasattr(button, 'data') and button.data in valid_buttons:
                         await self.client.send_message(self._Shadow_Ultimat_channel, f"Processing button: {button.data.decode()}")
                         async with self._lock:
                             if button.data == b"greenhouse":
@@ -403,7 +399,7 @@ class ShadowUltimat(loader.Module):
                             elif button.data == b"back":
                                 await self._update_status_message(message)
                             await self.client.send_message(self._Shadow_Ultimat_channel, f"Button {button.data.decode()} processed successfully")
-                        break
+                        return
         except Exception as e:
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Watcher error: {str(e)}")
 
@@ -458,7 +454,7 @@ class ShadowUltimat(loader.Module):
                                     await response.click(data=button.data)
                                     await self.client.send_message(self._Shadow_Ultimat_channel, f"Clicked fuel buy button: {button.data.decode()}")
                                     break
-                        await conv.get_response()  # Ожидаем подтверждения после нажатия
+                        await conv.get_response()
                     self.set("db", self._db)
                     await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed fuel data")
 
@@ -547,7 +543,7 @@ class ShadowUltimat(loader.Module):
                                         await response.click(data=button.data)
                                         await self.client.send_message(self._Shadow_Ultimat_channel, f"Clicked wasteland end button: {button.data.decode()}")
                                         break
-                            await conv.get_response()  # Ожидаем подтверждения после нажатия
+                            await conv.get_response()
                         self.set("db", self._db)
                     await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed wasteland data")
 
