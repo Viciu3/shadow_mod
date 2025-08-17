@@ -4,9 +4,9 @@ import time
 import re
 from datetime import datetime, timedelta
 from telethon import functions, types
-from telethon.tl.types import Message, ChatAdminRights
-from telethon.tl.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telethon.tl.types import Message
 from .. import loader, utils
+from ..inline.types import InlineCall
 import json
 import traceback
 
@@ -248,33 +248,78 @@ class ShadowUltimat(loader.Module):
         return status
 
     async def _update_status_message(self, message: Message, section: str = None):
-        buttons = [
-            [
-                InlineKeyboardButton(text="Теплица", callback_data="greenhouse"),
-                InlineKeyboardButton(text="Пустошь", callback_data="wasteland"),
-                InlineKeyboardButton(text="Сад", callback_data="garden")
-            ],
-            [
-                InlineKeyboardButton(text="Шахта", callback_data="mine"),
-                InlineKeyboardButton(text="Гильдия", callback_data="guild")
-            ]
-        ] if section is None else [[InlineKeyboardButton(text="Назад", callback_data="back")]]
-
         try:
-            chat = await message.get_chat()
-            new_message = await self.client.send_message(
-                chat,
-                await self._update_status_message_text(section),
-                reply_to=message.id,
-                buttons=buttons
+            text = await self._update_status_message_text(section)
+            reply_markup = [
+                [
+                    {"text": "Теплица", "callback": self.greenhouse_callback},
+                    {"text": "Пустошь", "callback": self.wasteland_callback},
+                    {"text": "Сад", "callback": self.garden_callback}
+                ],
+                [
+                    {"text": "Шахта", "callback": self.mine_callback},
+                    {"text": "Гильдия", "callback": self.guild_callback}
+                ]
+            ] if section is None else [[{"text": "Назад", "callback": self.back_callback}]]
+
+            await self.inline.form(
+                text=text,
+                message=message,
+                reply_markup=reply_markup
             )
-            self._status_message_id = getattr(new_message, 'id', None)
-            if not self._status_message_id:
-                await self.client.send_message(self._Shadow_Ultimat_channel, f"Warning: Could not retrieve message ID for section: {section or 'main'}")
-            else:
-                await self.client.send_message(self._Shadow_Ultimat_channel, f"Status message updated for section: {section or 'main'}, ID: {self._status_message_id}")
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Status message updated for section: {section or 'main'}")
         except Exception as e:
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Failed to update status message: {str(e)}")
+
+    async def greenhouse_callback(self, call: InlineCall):
+        async with self._lock:
+            await self._parse_greenhouse()
+            text = await self._update_status_message_text("greenhouse")
+            await call.edit(text, reply_markup=[[{"text": "Назад", "callback": self.back_callback}]])
+            await self.client.send_message(self._Shadow_Ultimat_channel, "Button greenhouse processed successfully")
+
+    async def wasteland_callback(self, call: InlineCall):
+        async with self._lock:
+            await self._parse_wasteland()
+            text = await self._update_status_message_text("wasteland")
+            await call.edit(text, reply_markup=[[{"text": "Назад", "callback": self.back_callback}]])
+            await self.client.send_message(self._Shadow_Ultimat_channel, "Button wasteland processed successfully")
+
+    async def garden_callback(self, call: InlineCall):
+        async with self._lock:
+            await self._parse_garden()
+            text = await self._update_status_message_text("garden")
+            await call.edit(text, reply_markup=[[{"text": "Назад", "callback": self.back_callback}]])
+            await self.client.send_message(self._Shadow_Ultimat_channel, "Button garden processed successfully")
+
+    async def mine_callback(self, call: InlineCall):
+        async with self._lock:
+            await self._parse_mine()
+            text = await self._update_status_message_text("mine")
+            await call.edit(text, reply_markup=[[{"text": "Назад", "callback": self.back_callback}]])
+            await self.client.send_message(self._Shadow_Ultimat_channel, "Button mine processed successfully")
+
+    async def guild_callback(self, call: InlineCall):
+        async with self._lock:
+            text = await self._update_status_message_text("guild")
+            await call.edit(text, reply_markup=[[{"text": "Назад", "callback": self.back_callback}]])
+            await self.client.send_message(self._Shadow_Ultimat_channel, "Button guild processed successfully")
+
+    async def back_callback(self, call: InlineCall):
+        async with self._lock:
+            text = await self._update_status_message_text()
+            await call.edit(text, reply_markup=[
+                [
+                    {"text": "Теплица", "callback": self.greenhouse_callback},
+                    {"text": "Пустошь", "callback": self.wasteland_callback},
+                    {"text": "Сад", "callback": self.garden_callback}
+                ],
+                [
+                    {"text": "Шахта", "callback": self.mine_callback},
+                    {"text": "Гильдия", "callback": self.guild_callback}
+                ]
+            ])
+            await self.client.send_message(self._Shadow_Ultimat_channel, "Button back processed successfully")
 
     @loader.command(ru_doc="Показывает основной список авто-фарма")
     async def shcmd(self, message: Message):
@@ -382,39 +427,6 @@ class ShadowUltimat(loader.Module):
             await utils.answer(message, "<b>Обмен бутылок запущен!</b>")
             asyncio.create_task(self._bottle_loop(message))
 
-    @loader.watcher()
-    async def callback_watcher(self, message: Message):
-        try:
-            if not message.reply_markup or message.id != self._status_message_id:
-                return  # Тихо игнорируем сообщения без кнопок или с неверным ID
-
-            valid_buttons = {b"greenhouse", b"wasteland", b"garden", b"mine", b"guild", b"back"}
-            for row in message.reply_markup.rows:
-                for button in row.buttons:
-                    if hasattr(button, 'data') and button.data in valid_buttons:
-                        await self.client.send_message(self._Shadow_Ultimat_channel, f"Processing button: {button.data.decode()}")
-                        async with self._lock:
-                            if button.data == b"greenhouse":
-                                await self._parse_greenhouse()
-                                await self._update_status_message(message, "greenhouse")
-                            elif button.data == b"wasteland":
-                                await self._parse_wasteland()
-                                await self._update_status_message(message, "wasteland")
-                            elif button.data == b"garden":
-                                await self._parse_garden()
-                                await self._update_status_message(message, "garden")
-                            elif button.data == b"mine":
-                                await self._parse_mine()
-                                await self._update_status_message(message, "mine")
-                            elif button.data == b"guild":
-                                await self._update_status_message(message, "guild")
-                            elif button.data == b"back":
-                                await self._update_status_message(message)
-                            await self.client.send_message(self._Shadow_Ultimat_channel, f"Button {button.data.decode()} processed successfully")
-                        return
-        except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Watcher error: {str(e)}")
-
     async def _parse_people(self):
         async with self._lock:
             async with self._client.conversation(self._bot) as conv:
@@ -488,7 +500,7 @@ class ShadowUltimat(loader.Module):
                     self._db['greenhouse']['crop'] = crop_match.group(1)
                     if self._db['greenhouse']['enabled'] and self._db['greenhouse']['water'] > 0:
                         resource = next(resource for range_, resource in self._resources_map.items() if self._db['greenhouse']['xp'] in range_)
-                        command = f"вырастить {resource}"  # Используем правильную команду
+                        command = f"вырастить {resource}"
                         await self.client.send_message(self._Shadow_Ultimat_channel, f"Sending greenhouse command: {command}")
                         while self._db['greenhouse']['water'] > 0:
                             await asyncio.sleep(2)
@@ -771,4 +783,3 @@ class ShadowUltimat(loader.Module):
             if self._db['guild']['enabled']:
                 await self.client.send_message(self._Shadow_Ultimat_channel, "Guild auto-farm placeholder")
                 await asyncio.sleep(2)
-   
