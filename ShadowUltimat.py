@@ -125,10 +125,16 @@ class ShadowUltimat(loader.Module):
 
         # Start auto-farm loop manually
         try:
-            self.auto_farm.start()
+            asyncio.create_task(self.auto_farm_loop())
             await self.client.send_message(self._Shadow_Ultimat_channel, "Auto-farm loop started")
         except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Failed to start auto-farm: {str(e)}")
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Failed to start auto-farm loop: {str(e)}")
+
+    async def auto_farm_loop(self):
+        """Manual loop for auto-farming"""
+        while True:
+            await self._auto_farm()
+            await asyncio.sleep(60)
 
     async def _update_status_message_text(self, section: str = None) -> str:
         """Helper to generate status message text without sending"""
@@ -237,6 +243,7 @@ class ShadowUltimat(loader.Module):
 
         try:
             await utils.answer(message, await self._update_status_message_text(section), reply_markup=buttons)
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Status message updated for section: {section or 'main'}")
         except Exception as e:
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Failed to update status message: {str(e)}")
 
@@ -304,59 +311,70 @@ class ShadowUltimat(loader.Module):
     @loader.command(ru_doc="Запустить автофарм вручную")
     async def startfarmcmd(self, message: Message):
         """Start auto-farm manually"""
-        await self.auto_farm()
-        await utils.answer(message, "Автофарм запущен вручную")
+        try:
+            await self._auto_farm()
+            await utils.answer(message, "Автофарм запущен вручную")
+            await self.client.send_message(self._Shadow_Ultimat_channel, "Manual auto-farm started")
+        except Exception as e:
+            await utils.answer(message, f"Ошибка при запуске автофарма: {str(e)}")
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Manual auto-farm error: {str(e)}")
 
     @loader.watcher(only_inline=True)
     async def callback_watcher(self, message: Message):
-        if not message.is_inline or not message.reply_markup:
-            return
-        for row in message.reply_markup.rows:
-            for button in row.buttons:
-                if hasattr(button, 'data') and button.data in [b"greenhouse", b"wasteland", b"garden", b"mine", b"guild", b"back"]:
-                    try:
-                        if button.data == b"greenhouse":
-                            async with self._client.conversation(self._bot) as conv:
-                                await conv.send_message("Моя теплица")
-                                response = await conv.get_response()
-                                await self._parse_greenhouse(response)
-                            await message.edit(text=await self._update_status_message_text("greenhouse"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
-                        elif button.data == b"wasteland":
-                            async with self._client.conversation(self._bot) as conv:
-                                await conv.send_message("Пустошь")
-                                response = await conv.get_response()
-                                await self._parse_wasteland(response)
-                            await message.edit(text=await self._update_status_message_text("wasteland"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
-                        elif button.data == b"garden":
-                            async with self._client.conversation(self._bot) as conv:
-                                await conv.send_message("/garden")
-                                response = await conv.get_response()
-                                await self._parse_garden(response)
-                            await message.edit(text=await self._update_status_message_text("garden"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
-                        elif button.data == b"mine":
-                            async with self._client.conversation(self._bot) as conv:
-                                await conv.send_message("/mine")
-                                response = await conv.get_response()
-                                await self._parse_mine(response)
-                            await message.edit(text=await self._update_status_message_text("mine"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
-                        elif button.data == b"guild":
-                            await message.edit(text=await self._update_status_message_text("guild"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
-                        elif button.data == b"back":
-                            await message.edit(text=await self._update_status_message_text(), reply_markup=[
-                                [
-                                    {"text": "Теплица", "data": b"greenhouse"},
-                                    {"text": "Пустошь", "data": b"wasteland"},
-                                    {"text": "Сад", "data": b"garden"}
-                                ],
-                                [
-                                    {"text": "Шахта", "data": b"mine"},
-                                    {"text": "Гильдия", "data": b"guild"}
-                                ]
-                            ])
-                        await self.client.send_message(self._Shadow_Ultimat_channel, f"Processed button: {button.data.decode()}")
-                    except Exception as e:
-                        await self.client.send_message(self._Shadow_Ultimat_channel, f"Callback error: {str(e)}")
-                    break
+        try:
+            if not message.is_inline or not message.reply_markup:
+                await self.client.send_message(self._Shadow_Ultimat_channel, "Watcher: Not an inline message or no reply_markup")
+                return
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Watcher triggered: {message.reply_markup}")
+            for row in message.reply_markup.rows:
+                for button in row.buttons:
+                    if hasattr(button, 'data') and button.data in [b"greenhouse", b"wasteland", b"garden", b"mine", b"guild", b"back"]:
+                        await self.client.send_message(self._Shadow_Ultimat_channel, f"Processing button: {button.data.decode()}")
+                        try:
+                            if button.data == b"greenhouse":
+                                async with self._client.conversation(self._bot) as conv:
+                                    await conv.send_message("Моя теплица")
+                                    response = await conv.get_response()
+                                    await self._parse_greenhouse(response)
+                                await message.edit(text=await self._update_status_message_text("greenhouse"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
+                            elif button.data == b"wasteland":
+                                async with self._client.conversation(self._bot) as conv:
+                                    await conv.send_message("Пустошь")
+                                    response = await conv.get_response()
+                                    await self._parse_wasteland(response)
+                                await message.edit(text=await self._update_status_message_text("wasteland"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
+                            elif button.data == b"garden":
+                                async with self._client.conversation(self._bot) as conv:
+                                    await conv.send_message("/garden")
+                                    response = await conv.get_response()
+                                    await self._parse_garden(response)
+                                await message.edit(text=await self._update_status_message_text("garden"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
+                            elif button.data == b"mine":
+                                async with self._client.conversation(self._bot) as conv:
+                                    await conv.send_message("/mine")
+                                    response = await conv.get_response()
+                                    await self._parse_mine(response)
+                                await message.edit(text=await self._update_status_message_text("mine"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
+                            elif button.data == b"guild":
+                                await message.edit(text=await self._update_status_message_text("guild"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
+                            elif button.data == b"back":
+                                await message.edit(text=await self._update_status_message_text(), reply_markup=[
+                                    [
+                                        {"text": "Теплица", "data": b"greenhouse"},
+                                        {"text": "Пустошь", "data": b"wasteland"},
+                                        {"text": "Сад", "data": b"garden"}
+                                    ],
+                                    [
+                                        {"text": "Шахта", "data": b"mine"},
+                                        {"text": "Гильдия", "data": b"guild"}
+                                    ]
+                                ])
+                            await self.client.send_message(self._Shadow_Ultimat_channel, f"Button {button.data.decode()} processed successfully")
+                        except Exception as e:
+                            await self.client.send_message(self._Shadow_Ultimat_channel, f"Callback error for button {button.data.decode()}: {str(e)}")
+                        break
+        except Exception as e:
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Watcher error: {str(e)}")
 
     async def _parse_people(self, message: Message):
         try:
@@ -581,8 +599,7 @@ class ShadowUltimat(loader.Module):
         except Exception as e:
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Error in mining: {str(e)}")
 
-    @loader.loop(60)
-    async def auto_farm(self):
+    async def _auto_farm(self):
         try:
             await self.client.send_message(self._Shadow_Ultimat_channel, "Auto-farm loop running")
             if self._db['people']['enabled']:
