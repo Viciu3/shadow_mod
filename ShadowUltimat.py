@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from telethon import functions, types
 from telethon.tl.types import Message, ChatAdminRights
 from .. import loader, utils
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +79,9 @@ class ShadowUltimat(loader.Module):
                 "bottles": 0,
                 "max_balance": 0
             }
-            self.set("db", self._db)
-            if not self.get("prefix"):
-                self.set("prefix", self.config["prefix"])
+            self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
+            if not self.db.get(self.__class__.__name__, "prefix"):
+                self.db.set(self.__class__.__name__, "prefix", self.config["prefix"])
             await self.client.send_message("me", "Database initialized successfully")
         except Exception as e:
             await self.client.send_message("me", f"Failed to initialize database: {str(e)}")
@@ -115,33 +116,33 @@ class ShadowUltimat(loader.Module):
         """Main loop for auto-farming, inspired by BFGBunkerMod"""
         while True:
             try:
-                if self.config["PeopleEnabled"] and (not self.get("people_time") or (time.time() - self.get("people_time")) >= 1805):
+                if self.config["PeopleEnabled"] and (not self.db.get(self.__class__.__name__, "people_time") or (time.time() - self.db.get(self.__class__.__name__, "people_time")) >= 1805):
                     await self._parse_people()
-                    self.set("people_time", int(time.time()))
+                    self.db.set(self.__class__.__name__, "people_time", int(time.time()))
 
-                if self.config["BonusEnabled"] and (not self.get("bonus_time") or (time.time() - self.get("bonus_time")) >= 24 * 3600):
+                if self.config["BonusEnabled"] and (not self.db.get(self.__class__.__name__, "bonus_time") or (time.time() - self.db.get(self.__class__.__name__, "bonus_time")) >= 24 * 3600):
                     await self._parse_bonus()
-                    self.set("bonus_time", int(time.time()))
+                    self.db.set(self.__class__.__name__, "bonus_time", int(time.time()))
 
-                if self.config["FuelEnabled"] and (not self.get("fuel_time") or (time.time() - self.get("fuel_time")) >= 3629):
+                if self.config["FuelEnabled"] and (not self.db.get(self.__class__.__name__, "fuel_time") or (time.time() - self.db.get(self.__class__.__name__, "fuel_time")) >= 3629):
                     await self._parse_fuel()
-                    self.set("fuel_time", int(time.time()))
+                    self.db.set(self.__class__.__name__, "fuel_time", int(time.time()))
 
-                if self.config["GreenhouseEnabled"] and (not self.get("greenhouse_time") or (time.time() - self.get("greenhouse_time")) >= 1212):
+                if self.config["GreenhouseEnabled"] and (not self.db.get(self.__class__.__name__, "greenhouse_time") or (time.time() - self.db.get(self.__class__.__name__, "greenhouse_time")) >= 1212):
                     await self._parse_greenhouse()
-                    self.set("greenhouse_time", int(time.time()))
+                    self.db.set(self.__class__.__name__, "greenhouse_time", int(time.time()))
 
-                if self.config["WastelandEnabled"] and (not self.get("wasteland_time") or (time.time() - self.get("wasteland_time")) >= 15 * 60):
+                if self.config["WastelandEnabled"] and (not self.db.get(self.__class__.__name__, "wasteland_time") or (time.time() - self.db.get(self.__class__.__name__, "wasteland_time")) >= 15 * 60):
                     await self._parse_wasteland()
-                    self.set("wasteland_time", int(time.time()))
+                    self.db.set(self.__class__.__name__, "wasteland_time", int(time.time()))
 
-                if self.config["GardenEnabled"] and (not self.get("garden_time") or (time.time() - self.get("garden_time")) >= 1212):
+                if self.config["GardenEnabled"] and (not self.db.get(self.__class__.__name__, "garden_time") or (time.time() - self.db.get(self.__class__.__name__, "garden_time")) >= 1212):
                     await self._parse_garden()
-                    self.set("garden_time", int(time.time()))
+                    self.db.set(self.__class__.__name__, "garden_time", int(time.time()))
 
-                if self.config["MineEnabled"] and (not self.get("mine_time") or (time.time() - self.get("mine_time")) >= self.config["MineCooldown"] * 60):
+                if self.config["MineEnabled"] and (not self.db.get(self.__class__.__name__, "mine_time") or (time.time() - self.db.get(self.__class__.__name__, "mine_time")) >= self.config["MineCooldown"] * 60):
                     await self._mine()
-                    self.set("mine_time", int(time.time()))
+                    self.db.set(self.__class__.__name__, "mine_time", int(time.time()))
 
                 if self.config["GuildEnabled"]:
                     await self.client.send_message(self._Shadow_Ultimat_channel, "Guild auto-farm placeholder")
@@ -258,9 +259,19 @@ class ShadowUltimat(loader.Module):
         ] if section is None else [[{"text": "Назад", "data": b"back"}]]
 
         try:
-            new_message = await utils.answer(message, await self._update_status_message_text(section), reply_markup=buttons)
-            self._status_message_id = getattr(new_message, 'message_id', None) or getattr(new_message, 'id', None)
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Status message updated for section: {section or 'main'}, ID: {self._status_message_id}")
+            # Отправляем сообщение напрямую, без inline-бота
+            chat = await message.get_chat()
+            new_message = await self.client.send_message(
+                chat,
+                await self._update_status_message_text(section),
+                reply_to=message.id,
+                reply_markup=buttons
+            )
+            self._status_message_id = getattr(new_message, 'id', None)
+            if not self._status_message_id:
+                await self.client.send_message(self._Shadow_Ultimat_channel, f"Warning: Could not retrieve message ID for section: {section or 'main'}")
+            else:
+                await self.client.send_message(self._Shadow_Ultimat_channel, f"Status message updated for section: {section or 'main'}, ID: {self._status_message_id}")
         except Exception as e:
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Failed to update status message: {str(e)}")
 
@@ -273,7 +284,7 @@ class ShadowUltimat(loader.Module):
     async def людиcmd(self, message: Message):
         """Toggle people auto-farming"""
         self._db['people']['enabled'] = not self._db['people']['enabled']
-        self.set("db", self._db)
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
         await utils.answer(message, f"Авто-фарм людей {'включен' if self._db['people']['enabled'] else 'выключен'}")
         await self._update_status_message(message)
 
@@ -281,7 +292,7 @@ class ShadowUltimat(loader.Module):
     async def бонусcmd(self, message: Message):
         """Toggle daily bonus collection"""
         self._db['bonus']['enabled'] = not self._db['bonus']['enabled']
-        self.set("db", self._db)
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
         await utils.answer(message, f"Ежедневный бонус {'включен' if self._db['bonus']['enabled'] else 'выключен'}")
         await self._update_status_message(message)
 
@@ -289,7 +300,7 @@ class ShadowUltimat(loader.Module):
     async def бензинcmd(self, message: Message):
         """Toggle fuel auto-farming"""
         self._db['fuel']['enabled'] = not self._db['fuel']['enabled']
-        self.set("db", self._db)
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
         await utils.answer(message, f"Авто-фарм бензина {'включен' if self._db['fuel']['enabled'] else 'выключен'}")
         await self._update_status_message(message)
 
@@ -297,7 +308,7 @@ class ShadowUltimat(loader.Module):
     async def теплицаcmd(self, message: Message):
         """Toggle greenhouse auto-farming"""
         self._db['greenhouse']['enabled'] = not self._db['greenhouse']['enabled']
-        self.set("db", self._db)
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
         await utils.answer(message, f"Авто-фарм теплицы {'включен' if self._db['greenhouse']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "greenhouse")
 
@@ -305,7 +316,7 @@ class ShadowUltimat(loader.Module):
     async def пустошьcmd(self, message: Message):
         """Toggle wasteland auto-farming"""
         self._db['wasteland']['enabled'] = not self._db['wasteland']['enabled']
-        self.set("db", self._db)
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
         await utils.answer(message, f"Авто-фарм пустоши {'включен' if self._db['wasteland']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "wasteland")
 
@@ -313,7 +324,7 @@ class ShadowUltimat(loader.Module):
     async def садcmd(self, message: Message):
         """Toggle garden auto-farming"""
         self._db['garden']['enabled'] = not self._db['garden']['enabled']
-        self.set("db", self._db)
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
         await utils.answer(message, f"Авто-фарм сада {'включен' if self._db['garden']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "garden")
 
@@ -321,7 +332,7 @@ class ShadowUltimat(loader.Module):
     async def шахтаcmd(self, message: Message):
         """Toggle mine auto-farming"""
         self._db['mine']['enabled'] = not self._db['mine']['enabled']
-        self.set("db", self._db)
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
         await utils.answer(message, f"Авто-фарм шахты {'включен' if self._db['mine']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "mine")
 
@@ -329,7 +340,7 @@ class ShadowUltimat(loader.Module):
     async def гильдияcmd(self, message: Message):
         """Toggle guild auto-farming"""
         self._db['guild']['enabled'] = not self._db['guild']['enabled']
-        self.set("db", self._db)
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
         await utils.answer(message, f"Авто-фарм гильдии {'включен' if self._db['guild']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "guild")
 
@@ -344,7 +355,7 @@ class ShadowUltimat(loader.Module):
             await utils.answer(message, "Префикс слишком длинный (макс. 10 символов)")
             return
         self.config["prefix"] = args
-        self.set("prefix", args)
+        self.db.set(self.__class__.__name__, "prefix", args)
         await utils.answer(message, f"Префикс установлен: <code>{args}</code>")
         await self._update_status_message(message)
 
@@ -362,11 +373,11 @@ class ShadowUltimat(loader.Module):
     @loader.command(ru_doc="Автоматический обмен бутылок")
     async def bottlescmd(self, message: Message):
         """Toggle automatic bottle exchange"""
-        if self.get('_bottles_status'):
-            self.set('_bottles_status', False)
+        if self.db.get(self.__class__.__name__, '_bottles_status'):
+            self.db.set(self.__class__.__name__, '_bottles_status', False)
             await utils.answer(message, "<b>Обмен бутылок остановлен!</b>")
         else:
-            self.set('_bottles_status', True)
+            self.db.set(self.__class__.__name__, '_bottles_status', True)
             await utils.answer(message, "<b>Обмен бутылок запущен!</b>")
             asyncio.create_task(self._bottle_loop(message))
 
@@ -421,7 +432,7 @@ class ShadowUltimat(loader.Module):
                         await asyncio.sleep(2)
                         await conv.send_message(f"Впустить {self._db['people']['max'] - self._db['people']['count']}")
                         await conv.get_response()
-                    self.set("db", self._db)
+                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
                 await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed people data")
 
     async def _parse_bonus(self):
@@ -432,7 +443,7 @@ class ShadowUltimat(loader.Module):
                 response = await conv.get_response()
                 if "ежедневный бонус" in response.raw_text:
                     self._db['bonus']['last_claim'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    self.set("db", self._db)
+                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
                     await self.client.send_message(self._Shadow_Ultimat_channel, "Bonus claimed")
 
     async def _parse_fuel(self):
@@ -455,7 +466,7 @@ class ShadowUltimat(loader.Module):
                                     await self.client.send_message(self._Shadow_Ultimat_channel, f"Clicked fuel buy button: {button.data.decode()}")
                                     break
                         await conv.get_response()
-                    self.set("db", self._db)
+                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
                     await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed fuel data")
 
     async def _parse_greenhouse(self):
@@ -486,7 +497,7 @@ class ShadowUltimat(loader.Module):
                                 self._db['greenhouse']['stock'][resource] += 1
                                 self._db['greenhouse']['water'] -= 1
                                 await self.client.send_message(self._Shadow_Ultimat_channel, f"Grew {resource}")
-                    self.set("db", self._db)
+                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
                     await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed greenhouse data")
 
     async def _parse_wasteland(self):
@@ -519,6 +530,7 @@ class ShadowUltimat(loader.Module):
                 text = response.raw_text
                 if "буря закончится" in text:
                     self._db['wasteland']['death_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
                     await self.client.send_message(self._Shadow_Ultimat_channel, "Wasteland death detected")
                 elif "Время в пустоши" in text:
                     time_match = re.search(r"Время в пустоши: ([\d\sчас\.мин\.]+)", text)
@@ -544,7 +556,7 @@ class ShadowUltimat(loader.Module):
                                         await self.client.send_message(self._Shadow_Ultimat_channel, f"Clicked wasteland end button: {button.data.decode()}")
                                         break
                             await conv.get_response()
-                        self.set("db", self._db)
+                        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
                     await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed wasteland data")
 
     async def _parse_garden(self):
@@ -565,7 +577,7 @@ class ShadowUltimat(loader.Module):
                         for fruit in self._db['garden']['stock']:
                             amount = re.search(rf"{fruit.capitalize()} - (\d+) шт\.", stock_text)
                             self._db['garden']['stock'][fruit] = int(amount.group(1)) if amount else 0
-                    self.set("db", self._db)
+                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
                     await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed garden data")
 
     async def _parse_mine(self):
@@ -601,7 +613,7 @@ class ShadowUltimat(loader.Module):
                             await conv.send_message("Купить каменную кирку")
                         await conv.get_response()
                         await self.client.send_message(self._Shadow_Ultimat_channel, "Bought pickaxe")
-                    self.set("db", self._db)
+                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
                     await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed mine data")
 
     async def _mine(self):
@@ -672,12 +684,13 @@ class ShadowUltimat(loader.Module):
                             await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
                         else:
                             await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
+                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
 
     async def _bottle_loop(self, message: Message):
         bottle_check_interval = 30 * 60
         last_bottle_check = 0
         message_count = 0
-        while self.get('_bottles_status'):
+        while self.db.get(self.__class__.__name__, '_bottles_status'):
             try:
                 current_time = time.time()
                 async with self._lock:
@@ -690,7 +703,7 @@ class ShadowUltimat(loader.Module):
                             self._db['bottles'] = bottles
                             max_balance = int("".join(filter(str.isdigit, response.raw_text.split("Баланс:")[1].split("/")[1].strip())))
                             self._db['max_balance'] = max_balance
-                            self.set("db", self._db)
+                            self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
                             await self.client.send_message(self._Shadow_Ultimat_channel, f"Checked bottles: {bottles}, max balance: {max_balance}")
                             last_bottle_check = current_time
 
@@ -701,7 +714,7 @@ class ShadowUltimat(loader.Module):
                         await asyncio.sleep(self.config["BottlesTime"])
 
                     if self._db['bottles'] <= 0:
-                        self.set('_bottles_status', False)
+                        self.db.set(self.__class__.__name__, '_bottles_status', False)
                         await utils.answer(message, "<b>Обмен бутылок остановлен из-за недостатка бутылок!</b>")
                         return
 
