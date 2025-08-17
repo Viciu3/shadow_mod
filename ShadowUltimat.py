@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta
 from telethon import functions, types
 from telethon.tl.types import Message, ChatAdminRights
+from telethon.tl.types import InlineKeyboardMarkup, InlineKeyboardButton
 from .. import loader, utils
 import json
 
@@ -248,24 +249,23 @@ class ShadowUltimat(loader.Module):
     async def _update_status_message(self, message: Message, section: str = None):
         buttons = [
             [
-                {"text": "Теплица", "data": b"greenhouse"},
-                {"text": "Пустошь", "data": b"wasteland"},
-                {"text": "Сад", "data": b"garden"}
+                InlineKeyboardButton(text="Теплица", callback_data="greenhouse"),
+                InlineKeyboardButton(text="Пустошь", callback_data="wasteland"),
+                InlineKeyboardButton(text="Сад", callback_data="garden")
             ],
             [
-                {"text": "Шахта", "data": b"mine"},
-                {"text": "Гильдия", "data": b"guild"}
+                InlineKeyboardButton(text="Шахта", callback_data="mine"),
+                InlineKeyboardButton(text="Гильдия", callback_data="guild")
             ]
-        ] if section is None else [[{"text": "Назад", "data": b"back"}]]
+        ] if section is None else [[InlineKeyboardButton(text="Назад", callback_data="back")]]
 
         try:
-            # Отправляем сообщение напрямую, без inline-бота
             chat = await message.get_chat()
             new_message = await self.client.send_message(
                 chat,
                 await self._update_status_message_text(section),
                 reply_to=message.id,
-                reply_markup=buttons
+                buttons=buttons
             )
             self._status_message_id = getattr(new_message, 'id', None)
             if not self._status_message_id:
@@ -373,7 +373,7 @@ class ShadowUltimat(loader.Module):
     @loader.command(ru_doc="Автоматический обмен бутылок")
     async def bottlescmd(self, message: Message):
         """Toggle automatic bottle exchange"""
-        if self.db.get(self.__class__.__name__, '_bottles_status'):
+        if self.db.get(self.__class__.__name__, '_bottles_status', False):
             self.db.set(self.__class__.__name__, '_bottles_status', False)
             await utils.answer(message, "<b>Обмен бутылок остановлен!</b>")
         else:
@@ -479,281 +479,267 @@ class ShadowUltimat(loader.Module):
                 xp_match = re.search(r"Опыт: (\d+)", text)
                 water_match = re.search(r"Вода: (\d+)/(\d+) л\.", text)
                 crop_match = re.search(r"Тебе доступна: (\S+)", text)
-                stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
-                if xp_match and water_match and crop_match:
-                    self._db['greenhouse']['xp'] = int(xp_match.group(1))
-                    self._db['greenhouse']['water'] = int(water_match.group(1))
-                    self._db['greenhouse']['max_water'] = int(water_match.group(2))
-                    self._db['greenhouse']['crop'] = crop_match.group(1)
-                    if self._db['greenhouse']['enabled'] and self._db['greenhouse']['water'] > 0:
-                        resource = next(resource for range_, resource in self._resources_map.items() if self._db['greenhouse']['xp'] in range_)
-                        while self._db['greenhouse']['water'] > 0:
-                            await asyncio.sleep(2)
-                            await conv.send_message(f"Вырастить {resource}")
-                            response = await conv.get_response()
-                            if "у тебя не хватает" in response.raw_text:
-                                break
-                            if "вырастил" in response.raw_text.lower():
-                                self._db['greenhouse']['stock'][resource] += 1
-                                self._db['greenhouse']['water'] -= 1
-                                await self.client.send_message(self._Shadow_Ultimat_channel, f"Grew {resource}")
-                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
-                    await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed greenhouse data")
+                stock_match = re.search(r"Твой склад:([\ Nivel de usuario: (\d+)/(\d+)
+  if level_match:
+    self._db['user']['level'] = int(level_match.group(1))
+    self._db['user']['max_level'] = int(level_match.group(2))
+  self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
+  await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed user data")
 
-    async def _parse_wasteland(self):
-        async with self._lock:
-            async with self._client.conversation(self._bot) as conv:
-                if self.config["StimulatorsToBuy"] > 0:
-                    await asyncio.sleep(2)
-                    await conv.send_message(f"Купить стимуляторы {self.config['StimulatorsToBuy']}")
-                    await conv.get_response()
-                if self.config["WeaponsToBuy"] > 0:
-                    await asyncio.sleep(2)
-                    await conv.send_message(f"Купить оружие {self.config['WeaponsToBuy']}")
-                    await conv.get_response()
-                await asyncio.sleep(2)
-                await conv.send_message("Исследовать пустошь")
-                response = await conv.get_response()
-                if "укажи количество стимуляторов" in response.raw_text:
-                    stimulators = min(int(re.search(r"У тебя: (\d+)", response.raw_text).group(1)), int(re.search(r"Максимум можешь дать: (\d+)", response.raw_text).group(1)))
-                    await asyncio.sleep(2)
-                    await conv.send_message(str(stimulators))
-                    response = await conv.get_response()
-                if "укажи количество оружия" in response.raw_text:
-                    weapons = min(int(re.search(r"У тебя: (\d+)", response.raw_text).group(1)), int(re.search(r"Максимум можешь дать: (\d+)", response.raw_text).group(1)))
-                    await asyncio.sleep(2)
-                    await conv.send_message(str(weapons))
-                    response = await conv.get_response()
-                await asyncio.sleep(15 * 60)
-                await conv.send_message("Пустошь")
-                response = await conv.get_response()
-                text = response.raw_text
-                if "буря закончится" in text:
-                    self._db['wasteland']['death_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
-                    await self.client.send_message(self._Shadow_Ultimat_channel, "Wasteland death detected")
-                elif "Время в пустоши" in text:
-                    time_match = re.search(r"Время в пустоши: ([\d\sчас\.мин\.]+)", text)
-                    health_match = re.search(r"Здоровье: (\d+)%", text)
-                    stimulators_match = re.search(r"Стимуляторов: (\d+) шт\.", text)
-                    weapons_match = re.search(r"Оружия: (\d+) ед\.", text)
-                    caps_match = re.search(r"Найдено крышек: (\d+) шт\.", text)
-                    rating_match = re.search(r"Получено рейтинга: (\d+)", text)
-                    if time_match and health_match and stimulators_match and weapons_match and caps_match and rating_match:
-                        self._db['wasteland']['time'] = time_match.group(1)
-                        self._db['wasteland']['health'] = int(health_match.group(1))
-                        self._db['wasteland']['stimulators'] = int(stimulators_match.group(1))
-                        self._db['wasteland']['weapons'] = int(weapons_match.group(1))
-                        self._db['wasteland']['caps'] = int(caps_match.group(1))
-                        self._db['wasteland']['rating'] = int(rating_match.group(1))
-                        self._db['wasteland']['death_date'] = None
-                        if self._db['wasteland']['enabled'] and self._db['wasteland']['health'] < 20 and response.reply_markup:
-                            await asyncio.sleep(2)
-                            for row in response.reply_markup.rows:
-                                for button in row.buttons:
-                                    if hasattr(button, 'data') and button.data.startswith(b"end_research_"):
-                                        await response.click(data=button.data)
-                                        await self.client.send_message(self._Shadow_Ultimat_channel, f"Clicked wasteland end button: {button.data.decode()}")
-                                        break
-                            await conv.get_response()
-                        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
-                    await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed wasteland data")
+async def _parse_wasteland(self):
+  async with self._lock:
+    async with self._client.conversation(self._bot) as conv:
+      if self.config["StimulatorsToBuy"] > 0:
+        await asyncio.sleep(2)
+        await conv.send_message(f"Купить стимуляторы {self.config['StimulatorsToBuy']}")
+        await conv.get_response()
+      if self.config["WeaponsToBuy"] > 0:
+        await asyncio.sleep(2)
+        await conv.send_message(f"Купить оружие {self.config['WeaponsToBuy']}")
+        await conv.get_response()
+      await asyncio.sleep(2)
+      await conv.send_message("Исследовать пустошь")
+      response = await conv.get_response()
+      if "укажи количество стимуляторов" in response.raw_text:
+        stimulators = min(int(re.search(r"У тебя: (\d+)", response.raw_text).group(1)), int(re.search(r"Максимум можешь дать: (\d+)", response.raw_text).group(1)))
+        await asyncio.sleep(2)
+        await conv.send_message(str(stimulators))
+        response = await conv.get_response()
+      if "укажи количество оружия" in response.raw_text:
+        weapons = min(int(re.search(r"У тебя: (\d+)", response.raw_text).group(1)), int(re.search(r"Максимум можешь дать: (\d+)", response.raw_text).group(1)))
+        await asyncio.sleep(2)
+        await conv.send_message(str(weapons))
+        response = await conv.get_response()
+      await asyncio.sleep(15 * 60)
+      await conv.send_message("Пустошь")
+      response = await conv.get_response()
+      text = response.raw_text
+      if "буря закончится" in text:
+        self._db['wasteland']['death_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
+        await self.client.send_message(self._Shadow_Ultimat_channel, "Wasteland death detected")
+      elif "Время в пустоши" in text:
+        time_match = re.search(r"Время в пустоши: ([\d\sчас\.мин\.]+)", text)
+        health_match = re.search(r"Здоровье: (\d+)%", text)
+        stimulators_match = re.search(r"Стимуляторов: (\d+) шт\.", text)
+        weapons_match = re.search(r"Оружия: (\d+) ед\.", text)
+        caps_match = re.search(r"Найдено крышек: (\d+) шт\.", text)
+        rating_match = re.search(r"Получено рейтинга: (\d+)", text)
+        if time_match and health_match and stimulators_match and weapons_match and caps_match and rating_match:
+          self._db['wasteland']['time'] = time_match.group(1)
+          self._db['wasteland']['health'] = int(health_match.group(1))
+          self._db['wasteland']['stimulators'] = int(stimulators_match.group(1))
+          self._db['wasteland']['weapons'] = int(weapons_match.group(1))
+          self._db['wasteland']['caps'] = int(caps_match.group(1))
+          self._db['wasteland']['rating'] = int(rating_match.group(1))
+          self._db['wasteland']['death_date'] = None
+          if self._db['wasteland']['enabled'] and self._db['wasteland']['health'] < 20 and response.reply_markup:
+            await asyncio.sleep(2)
+            for row in response.reply_markup.rows:
+              for button in row.buttons:
+                if hasattr(button, 'data') and button.data.startswith(b"end_research_"):
+                  await response.click(data=button.data)
+                  await self.client.send_message(self._Shadow_Ultimat_channel, f"Clicked wasteland end button: {button.data.decode()}")
+                  break
+            await conv.get_response()
+          self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
+        await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed wasteland data")
 
-    async def _parse_garden(self):
-        async with self._lock:
-            async with self._client.conversation(self._bot) as conv:
-                await asyncio.sleep(2)
-                await conv.send_message("/garden")
-                response = await conv.get_response()
-                text = response.raw_text
-                level_match = re.search(r"Уровень: (\d+)", text)
-                status_match = re.search(r"Статус сада:\s*([\s\S]*?)(?=\n\n|$)", text)
-                stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
-                if level_match and status_match:
-                    self._db['garden']['level'] = int(level_match.group(1))
-                    self._db['garden']['status'] = status_match.group(1).strip()
-                    if stock_match:
-                        stock_text = stock_match.group(1).strip()
-                        for fruit in self._db['garden']['stock']:
-                            amount = re.search(rf"{fruit.capitalize()} - (\d+) шт\.", stock_text)
-                            self._db['garden']['stock'][fruit] = int(amount.group(1)) if amount else 0
-                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
-                    await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed garden data")
+async def _parse_garden(self):
+  async with self._lock:
+    async with self._client.conversation(self._bot) as conv:
+      await asyncio.sleep(2)
+      await conv.send_message("/garden")
+      response = await conv.get_response()
+      text = response.raw_text
+      level_match = re.search(r"Уровень: (\d+)", text)
+      status_match = re.search(r"Статус сада:\s*([\s\S]*?)(?=\n\n|$)", text)
+      stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
+      if level_match and status_match:
+        self._db['garden']['level'] = int(level_match.group(1))
+        self._db['garden']['status'] = status_match.group(1).strip()
+        if stock_match:
+          stock_text = stock_match.group(1).strip()
+          for fruit in self._db['garden']['stock']:
+            amount = re.search(rf"{fruit.capitalize()} - (\d+) шт\.", stock_text)
+            self._db['garden']['stock'][fruit] = int(amount.group(1)) if amount else 0
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
+        await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed garden data")
 
-    async def _parse_mine(self):
-        async with self._lock:
-            async with self._client.conversation(self._bot) as conv:
-                await asyncio.sleep(2)
-                await conv.send_message("/mine")
-                response = await conv.get_response()
-                text = response.raw_text
-                pickaxe_match = re.search(r"Кирка: ([^\n]+)", text)
-                durability_match = re.search(r"Прочность: (\d+)", text)
-                depth_match = re.search(r"Уровень погружения: (\d+) м\.", text)
-                stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
-                if pickaxe_match and durability_match and depth_match:
-                    self._db['mine']['pickaxe'] = pickaxe_match.group(1)
-                    self._db['mine']['durability'] = int(durability_match.group(1))
-                    self._db['mine']['depth'] = int(depth_match.group(1))
-                    if stock_match:
-                        stock_text = stock_match.group(1).strip()
-                        for resource in self._db['mine']['stock']:
-                            amount = re.search(rf"{resource.capitalize()} - (\d+) кг\.", stock_text)
-                            self._db['mine']['stock'][resource] = int(amount.group(1)) if amount else 0
-                    if self._db['mine']['enabled'] and self._db['mine']['durability'] == 0:
-                        await asyncio.sleep(2)
-                        await conv.send_message("Б")
-                        m = await conv.get_response()
-                        balance = int("".join(s for s in m.raw_text.split("Баланс:")[1].split('/')[0].strip() if s.isdigit()))
-                        if balance >= 1000000:
-                            await conv.send_message("Купить алмазную кирку")
-                        elif balance >= 200000:
-                            await conv.send_message("Купить железную кирку")
-                        elif balance >= 30000:
-                            await conv.send_message("Купить каменную кирку")
-                        await conv.get_response()
-                        await self.client.send_message(self._Shadow_Ultimat_channel, "Bought pickaxe")
-                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
-                    await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed mine data")
+async def _parse_mine(self):
+  async with self._lock:
+    async with self._client.conversation(self._bot) as conv:
+      await asyncio.sleep(2)
+      await conv.send_message("/mine")
+      response = await conv.get_response()
+      text = response.raw_text
+      pickaxe_match = re.search(r"Кирка: ([^\n]+)", text)
+      durability_match = re.search(r"Прочность: (\d+)", text)
+      depth_match = re.search(r"Уровень погружения: (\d+) м\.", text)
+      stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
+      if pickaxe_match and durability_match and depth_match:
+        self._db['mine']['pickaxe'] = pickaxe_match.group(1)
+        self._db['mine']['durability'] = int(durability_match.group(1))
+        self._db['mine']['depth'] = int(depth_match.group(1))
+        if stock_match:
+          stock_text = stock_match.group(1).strip()
+          for resource in self._db['mine']['stock']:
+            amount = re.search(rf"{resource.capitalize()} - (\d+) кг\.", stock_text)
+            self._db['mine']['stock'][resource] = int(amount.group(1)) if amount else 0
+        if self._db['mine']['enabled'] and self._db['mine']['durability'] == 0:
+          await asyncio.sleep(2)
+          await conv.send_message("Б")
+          m = await conv.get_response()
+          balance = int("".join(s for s in m.raw_text.split("Баланс:")[1].split('/')[0].strip() if s.isdigit()))
+          if balance >= 1000000:
+            await conv.send_message("Купить алмазную кирку")
+          elif balance >= 200000:
+            await conv.send_message("Купить железную кирку")
+          elif balance >= 30000:
+            await conv.send_message("Купить каменную кирку")
+          await conv.get_response()
+          await self.client.send_message(self._Shadow_Ultimat_channel, "Bought pickaxe")
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
+        await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed mine data")
 
-    async def _mine(self):
-        async with self._lock:
-            async with self._client.conversation(self._bot) as conv:
-                await asyncio.sleep(2)
-                await conv.send_message("копать")
-                m = await conv.get_response()
-                if "у тебя нет кирки" in m.raw_text:
-                    await asyncio.sleep(2)
-                    await conv.send_message("Б")
-                    m = await conv.get_response()
-                    balance = int("".join(s for s in m.raw_text.split("Баланс:")[1].split('/')[0].strip() if s.isdigit()))
-                    if balance < 30000:
-                        await self.client.send_message(self._Shadow_Ultimat_channel, "Insufficient balance for pickaxe")
-                        return
-                    await asyncio.sleep(2)
-                    if balance >= 1000000:
-                        await conv.send_message("Купить алмазную кирку")
-                    elif balance >= 200000:
-                        await conv.send_message("Купить железную кирку")
-                    else:
-                        await conv.send_message("Купить каменную кирку")
-                    await conv.get_response()
-                    await asyncio.sleep(2)
-                    await conv.send_message("копать")
-                    m = await conv.get_response()
+async def _mine(self):
+  async with self._lock:
+    async with self._client.conversation(self._bot) as conv:
+      await asyncio.sleep(2)
+      await conv.send_message("копать")
+      m = await conv.get_response()
+      if "у тебя нет кирки" in m.raw_text:
+        await asyncio.sleep(2)
+        await conv.send_message("Б")
+        m = await conv.get_response()
+        balance = int("".join(s for s in m.raw_text.split("Баланс:")[1].split('/')[0].strip() if s.isdigit()))
+        if balance < 30000:
+          await self.client.send_message(self._Shadow_Ultimat_channel, "Insufficient balance for pickaxe")
+          return
+        await asyncio.sleep(2)
+        if balance >= 1000000:
+          await conv.send_message("Купить алмазную кирку")
+        elif balance >= 200000:
+          await conv.send_message("Купить железную кирку")
+        else:
+          await conv.send_message("Купить каменную кирку")
+        await conv.get_response()
+        await asyncio.sleep(2)
+        await conv.send_message("копать")
+        m = await conv.get_response()
 
-                if 'отдохнёт' in m.raw_text:
-                    await self.client.send_message(self._Shadow_Ultimat_channel, "Mining cooldown active")
-                    return
+      if 'отдохнёт' in m.raw_text:
+        await self.client.send_message(self._Shadow_Ultimat_channel, "Mining cooldown active")
+        return
 
-                resources_result = m.raw_text.split("ты нашёл")
-                resources = 'Воздух'
-                if len(resources_result) > 1:
-                    resources_text = resources_result[1].split(' ')[1:]
-                    resources = ' '.join(resources_text).split('.')[0]
+      resources_result = m.raw_text.split("ты нашёл")
+      resources = 'Воздух'
+      if len(resources_result) > 1:
+        resources_text = resources_result[1].split(' ')[1:]
+        resources = ' '.join(resources_text).split('.')[0]
 
-                probability_result = m.raw_text.split("вероятностью")
-                probability = 0
-                if len(probability_result) > 1:
-                    probability_text = probability_result[1]
-                    probability = int("".join(s for s in probability_text.split('%')[0].strip() if s.isdigit()))
+      probability_result = m.raw_text.split("вероятностью")
+      probability = 0
+      if len(probability_result) > 1:
+        probability_text = probability_result[1]
+        probability = int("".join(s for s in probability_text.split('%')[0].strip() if s.isdigit()))
 
-                if self._db['mine']['enabled'] and m.reply_markup:
-                    await asyncio.sleep(2)
-                    if self.config["MineDiamond"] and ("ты нашёл 💎 Алмаз." in m.raw_text or probability == 100):
-                        await m.click(0)
-                        m = await conv.get_edit()
-                        if "Прочность твоей кирки уменьшена" in m.text:
-                            await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
-                        else:
-                            await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
-                    elif self.config["SkipNonUranium"] and "Уран" not in resources:
-                        await m.click(1)
-                        await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты пропустил {resources} с шансом {probability}%\n#Пропуск")
-                    elif self.config["MineProbability"] and 80 <= probability <= 100:
-                        await m.click(0)
-                        m = await conv.get_edit()
-                        if "Прочность твоей кирки уменьшена" in m.text:
-                            await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
-                        else:
-                            await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
-                    else:
-                        await m.click(0)
-                        m = await conv.get_edit()
-                        if "Прочность твоей кирки уменьшена" in m.text:
-                            await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
-                        else:
-                            await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
-                    self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
+      if self._db['mine']['enabled'] and m.reply_markup:
+        await asyncio.sleep(2)
+        if self.config["MineDiamond"] and ("ты нашёл 💎 Алмаз." in m.raw_text or probability == 100):
+          await m.click(0)
+          m = await conv.get_edit()
+          if "Прочность твоей кирки уменьшена" in m.text:
+            await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
+          else:
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
+        elif self.config["SkipNonUranium"] and "Уран" not in resources:
+          await m.click(1)
+          await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты пропустил {resources} с шансом {probability}%\n#Пропуск")
+        elif self.config["MineProbability"] and 80 <= probability <= 100:
+          await m.click(0)
+          m = await conv.get_edit()
+          if "Прочность твоей кирки уменьшена" in m.text:
+            await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
+          else:
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
+        else:
+          await m.click(0)
+          m = await conv.get_edit()
+          if "Прочность твоей кирки уменьшена" in m.text:
+            await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
+          else:
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
+        self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
 
-    async def _bottle_loop(self, message: Message):
-        bottle_check_interval = 30 * 60
-        last_bottle_check = 0
-        message_count = 0
-        while self.db.get(self.__class__.__name__, '_bottles_status'):
-            try:
-                current_time = time.time()
-                async with self._lock:
-                    if current_time - last_bottle_check >= bottle_check_interval:
-                        async with self._client.conversation(self._bot) as conv:
-                            await asyncio.sleep(2)
-                            await conv.send_message("Б")
-                            response = await conv.get_response()
-                            bottles = int("".join(filter(str.isdigit, response.raw_text.split("Бутылок:")[1].split()[0].strip())))
-                            self._db['bottles'] = bottles
-                            max_balance = int("".join(filter(str.isdigit, response.raw_text.split("Баланс:")[1].split("/")[1].strip())))
-                            self._db['max_balance'] = max_balance
-                            self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
-                            await self.client.send_message(self._Shadow_Ultimat_channel, f"Checked bottles: {bottles}, max balance: {max_balance}")
-                            last_bottle_check = current_time
+async def _bottle_loop(self, message: Message):
+  bottle_check_interval = 30 * 60
+  last_bottle_check = 0
+  message_count = 0
+  while self.db.get(self.__class__.__name__, '_bottles_status', False):
+    try:
+      current_time = time.time()
+      async with self._lock:
+        if current_time - last_bottle_check >= bottle_check_interval:
+          async with self._client.conversation(self._bot) as conv:
+            await asyncio.sleep(2)
+            await conv.send_message("Б")
+            response = await conv.get_response()
+            bottles = int("".join(filter(str.isdigit, response.raw_text.split("Бутылок:")[1].split()[0].strip())))
+            self._db['bottles'] = bottles
+            max_balance = int("".join(filter(str.isdigit, response.raw_text.split("Баланс:")[1].split("/")[1].strip())))
+            self._db['max_balance'] = max_balance
+            self.db.set(self.__class__.__name__, "db", json.dumps(self._db))
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Checked bottles: {bottles}, max balance: {max_balance}")
+            last_bottle_check = current_time
 
-                    await asyncio.sleep(2)
-                    async with self._client.conversation(self._bot) as conv:
-                        await conv.send_message("пополнить бутылки максимум")
-                        message_count += 1
-                        await asyncio.sleep(self.config["BottlesTime"])
+        await asyncio.sleep(2)
+        async with self._client.conversation(self._bot) as conv:
+          await conv.send_message("пополнить бутылки максимум")
+          message_count += 1
+          await asyncio.sleep(self.config["BottlesTime"])
 
-                    if self._db['bottles'] <= 0:
-                        self.db.set(self.__class__.__name__, '_bottles_status', False)
-                        await utils.answer(message, "<b>Обмен бутылок остановлен из-за недостатка бутылок!</b>")
-                        return
+        if self._db['bottles'] <= 0:
+          self.db.set(self.__class__.__name__, '_bottles_status', False)
+          await utils.answer(message, "<b>Обмен бутылок остановлен из-за недостатка бутылок!</b>")
+          return
 
-                    if message_count >= self.config['MessageCount']:
-                        await self.client.send_message(self._Shadow_Ultimat_channel, "Protection pause: stopping for 2 minutes")
-                        await asyncio.sleep(120)
-                        message_count = 0
-            except Exception as e:
-                await self.client.send_message(self._Shadow_Ultimat_channel, f"Bottle loop error: {str(e)}")
-        await utils.answer(message, "<b>Обмен бутылок остановлен!</b>")
+        if message_count >= self.config['MessageCount']:
+          await self.client.send_message(self._Shadow_Ultimat_channel, "Protection pause: stopping for 2 minutes")
+          await asyncio.sleep(120)
+          message_count = 0
+    except Exception as e:
+      await self.client.send_message(self._Shadow_Ultimat_channel, f"Bottle loop error: {str(e)}")
+  await utils.answer(message, "<b>Обмен бутылок остановлен!</b>")
 
-    async def _run_farm_tasks(self):
-        """Run all farm tasks manually"""
-        async with self._lock:
-            if self._db['people']['enabled']:
-                await self._parse_people()
-                await asyncio.sleep(2)
-            if self._db['bonus']['enabled']:
-                last_claim = self._db['bonus']['last_claim']
-                if last_claim:
-                    last_claim = datetime.strptime(last_claim, "%Y-%m-%d %H:%M:%S")
-                if not last_claim or (datetime.now() - last_claim) >= timedelta(hours=24):
-                    await self._parse_bonus()
-                    await asyncio.sleep(2)
-            if self._db['fuel']['enabled']:
-                await self._parse_fuel()
-                await asyncio.sleep(2)
-            if self._db['greenhouse']['enabled']:
-                await self._parse_greenhouse()
-                await asyncio.sleep(2)
-            if self._db['wasteland']['enabled'] and not self._db['wasteland']['death_date']:
-                await self._parse_wasteland()
-                await asyncio.sleep(2)
-            if self._db['garden']['enabled']:
-                await self._parse_garden()
-                await asyncio.sleep(2)
-            if self._db['mine']['enabled']:
-                await self._mine()
-                await asyncio.sleep(2)
-            if self._db['guild']['enabled']:
-                await self.client.send_message(self._Shadow_Ultimat_channel, "Guild auto-farm placeholder")
-                await asyncio.sleep(2)
+async def _run_farm_tasks(self):
+  """Run all farm tasks manually"""
+  async with self._lock:
+    if self._db['people']['enabled']:
+      await self._parse_people()
+      await asyncio.sleep(2)
+    if self._db['bonus']['enabled']:
+      last_claim = self._db['bonus']['last_claim']
+      if last_claim:
+        last_claim = datetime.strptime(last_claim, "%Y-%m-%d %H:%M:%S")
+      if not last_claim or (datetime.now() - last_claim) >= timedelta(hours=24):
+        await self._parse_bonus()
+        await asyncio.sleep(2)
+    if self._db['fuel']['enabled']:
+      await self._parse_fuel()
+      await asyncio.sleep(2)
+    if self._db['greenhouse']['enabled']:
+      await self._parse_greenhouse()
+      await asyncio.sleep(2)
+    if self._db['wasteland']['enabled'] and not self._db['wasteland']['death_date']:
+      await self._parse_wasteland()
+      await asyncio.sleep(2)
+    if self._db['garden']['enabled']:
+      await self._parse_garden()
+      await asyncio.sleep(2)
+    if self._db['mine']['enabled']:
+      await self._mine()
+      await asyncio.sleep(2)
+    if self._db['guild']['enabled']:
+      await self.client.send_message(self._Shadow_Ultimat_channel, "Guild auto-farm placeholder")
+      await asyncio.sleep(2)
