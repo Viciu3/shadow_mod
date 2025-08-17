@@ -69,6 +69,10 @@ class ShadowUltimat(loader.Module):
             range(60001, 100000): "фасоль",
             range(100001, 10**50): "помидор",
         }
+        # Defer database initialization to client_ready to avoid _db access in __init__
+
+    async def client_ready(self):
+        # Initialize database
         self._db = {
             "people": self.pointer("people", {"enabled": True, "count": 0, "queue": 0, "max": 0}),
             "bonus": self.pointer("bonus", {"enabled": True, "last_claim": None}),
@@ -95,7 +99,7 @@ class ShadowUltimat(loader.Module):
             })
         }
 
-    async def client_ready(self):
+        # Set up channel
         self._Shadow_Ultimat_channel, _ = await utils.asset_channel(
             self._client,
             "Shadow_Ultimat_bfgb - чат",
