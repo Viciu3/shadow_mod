@@ -1,11 +1,13 @@
-from herokutl.types import Message
-from .. import loader, utils
 import asyncio
+import logging
+import time
 import re
-import typing
-from telethon.tl.types import Message, ChatAdminRights
-from telethon import functions
 from datetime import datetime, timedelta
+from telethon import functions, types
+from telethon.tl.types import Message, ChatAdminRights
+from .. import loader, utils
+
+logger = logging.getLogger(__name__)
 
 @loader.tds
 class ShadowUltimat(loader.Module):
@@ -17,49 +19,25 @@ class ShadowUltimat(loader.Module):
         self._bot = "@bfgbunker_bot"
         self._Shadow_Ultimat_channel = None
         self._lock = asyncio.Lock()  # Lock for exclusive conversation
+        self._status_message_id = None  # Для хранения ID сообщения .sh
         self.config = loader.ModuleConfig(
-            loader.ConfigValue(
-                "PeopleEnabled", True, "Enable auto-farming for people", validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "BonusEnabled", True, "Enable daily bonus collection", validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "FuelEnabled", True, "Enable auto-farming for fuel", validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "GreenhouseEnabled", True, "Enable auto-farming for greenhouse", validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "WastelandEnabled", True, "Enable auto-farming for wasteland", validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "GardenEnabled", True, "Enable auto-farming for garden", validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "MineEnabled", True, "Enable auto-farming for mine", validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "GuildEnabled", True, "Enable auto-farming for guild", validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "StimulatorsToBuy", 1, "Number of stimulators to buy", validator=loader.validators.Integer(minimum=0)
-            ),
-            loader.ConfigValue(
-                "WeaponsToBuy", 1, "Number of weapons to buy", validator=loader.validators.Integer(minimum=0)
-            ),
-            loader.ConfigValue(
-                "MineCooldown", 6, "Cooldown between mining attempts (minutes)", validator=loader.validators.Integer(minimum=1)
-            ),
-            loader.ConfigValue(
-                "MineDiamond", True, "Mine diamonds automatically", validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "SkipNonUranium", False, "Skip non-uranium resources", validator=loader.validators.Boolean()
-            ),
-            loader.ConfigValue(
-                "MineProbability", True, "Mine based on probability (80-100%)", validator=loader.validators.Boolean()
-            )
+            loader.ConfigValue("PeopleEnabled", True, "Enable auto-farming for people", validator=loader.validators.Boolean()),
+            loader.ConfigValue("BonusEnabled", True, "Enable daily bonus collection", validator=loader.validators.Boolean()),
+            loader.ConfigValue("FuelEnabled", True, "Enable auto-farming for fuel", validator=loader.validators.Boolean()),
+            loader.ConfigValue("GreenhouseEnabled", True, "Enable auto-farming for greenhouse", validator=loader.validators.Boolean()),
+            loader.ConfigValue("WastelandEnabled", True, "Enable auto-farming for wasteland", validator=loader.validators.Boolean()),
+            loader.ConfigValue("GardenEnabled", True, "Enable auto-farming for garden", validator=loader.validators.Boolean()),
+            loader.ConfigValue("MineEnabled", True, "Enable auto-farming for mine", validator=loader.validators.Boolean()),
+            loader.ConfigValue("GuildEnabled", True, "Enable auto-farming for guild", validator=loader.validators.Boolean()),
+            loader.ConfigValue("StimulatorsToBuy", 1, "Number of stimulators to buy", validator=loader.validators.Integer(minimum=0)),
+            loader.ConfigValue("WeaponsToBuy", 1, "Number of weapons to buy", validator=loader.validators.Integer(minimum=0)),
+            loader.ConfigValue("MineCooldown", 6, "Cooldown between mining attempts (minutes)", validator=loader.validators.Integer(minimum=1)),
+            loader.ConfigValue("MineDiamond", True, "Mine diamonds automatically", validator=loader.validators.Boolean()),
+            loader.ConfigValue("SkipNonUranium", False, "Skip non-uranium resources", validator=loader.validators.Boolean()),
+            loader.ConfigValue("MineProbability", True, "Mine based on probability (80-100%)", validator=loader.validators.Boolean()),
+            loader.ConfigValue("BottlesTime", 2, "Time between bottle exchanges (seconds)", validator=loader.validators.Float()),
+            loader.ConfigValue("MessageCount", 120, "Number of messages before protection pause", validator=loader.validators.Integer()),
+            loader.ConfigValue("prefix", ".", "Prefix for commands", validator=loader.validators.String())
         )
         self._resources_map = {
             range(0, 500): "картошка",
@@ -75,30 +53,35 @@ class ShadowUltimat(loader.Module):
         # Initialize database
         try:
             self._db = {
-                "people": self.pointer("people", {"enabled": True, "count": 0, "queue": 0, "max": 0}),
-                "bonus": self.pointer("bonus", {"enabled": True, "last_claim": None}),
-                "fuel": self.pointer("fuel", {"enabled": True, "current": 0, "max": 0}),
-                "greenhouse": self.pointer("greenhouse", {
+                "people": {"enabled": True, "count": 0, "queue": 0, "max": 0},
+                "bonus": {"enabled": True, "last_claim": None},
+                "fuel": {"enabled": True, "current": 0, "max": 0},
+                "greenhouse": {
                     "enabled": True, "xp": 0, "water": 0, "max_water": 0, "crop": "",
                     "stock": {"картошка": 0, "морковь": 0, "рис": 0, "свекла": 0, "огурец": 0, "фасоль": 0, "помидор": 0}
-                }),
-                "wasteland": self.pointer("wasteland", {
+                },
+                "wasteland": {
                     "enabled": True, "time": "0 час. 0 мин.", "health": 100, "stimulators": 0, "weapons": 0,
                     "caps": 0, "rating": 0, "death_date": None
-                }),
-                "garden": self.pointer("garden", {
+                },
+                "garden": {
                     "enabled": True, "level": 1, "status": "Пустует",
                     "stock": {"яблоко": 0, "черешня": 0, "персик": 0, "мандарин": 0}
-                }),
-                "mine": self.pointer("mine", {
+                },
+                "mine": {
                     "enabled": True, "pickaxe": "Нет кирки", "durability": 0, "depth": 0,
                     "stock": {"песок": 0, "уголь": 0, "железо": 0, "медь": 0, "серебро": 0, "алмаз": 0, "уран": 0}
-                }),
-                "guild": self.pointer("guild", {
+                },
+                "guild": {
                     "enabled": True, "auto_banks": False, "auto_bottles": False,
                     "auto_guild_attack": False, "auto_boss_attack": False, "auto_purchase": False
-                })
+                },
+                "bottles": 0,
+                "max_balance": 0
             }
+            self.set("db", self._db)
+            if not self.get("prefix"):
+                self.set("prefix", self.config["prefix"])
             await self.client.send_message("me", "Database initialized successfully")
         except Exception as e:
             await self.client.send_message("me", f"Failed to initialize database: {str(e)}")
@@ -124,21 +107,54 @@ class ShadowUltimat(loader.Module):
         except Exception as e:
             await self.client.send_message("me", f"Failed to initialize channel: {str(e)}")
 
-        # Start auto-farm loop manually
+        # Start auto-farm loop
         try:
-            asyncio.create_task(self.auto_farm_loop())
+            asyncio.create_task(self.main_loop())
             await self.client.send_message(self._Shadow_Ultimat_channel, "Auto-farm loop started")
         except Exception as e:
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Failed to start auto-farm loop: {str(e)}")
 
-    async def auto_farm_loop(self):
-        """Manual loop for auto-farming"""
+    async def main_loop(self):
+        """Main loop for auto-farming, inspired by BFGBunkerMod"""
         while True:
-            await self._auto_farm()
+            try:
+                if self.config["PeopleEnabled"] and (not self.get("people_time") or (time.time() - self.get("people_time")) >= 1805):
+                    await self._parse_people()
+                    self.set("people_time", int(time.time()))
+
+                if self.config["BonusEnabled"] and (not self.get("bonus_time") or (time.time() - self.get("bonus_time")) >= 24 * 3600):
+                    await self._parse_bonus()
+                    self.set("bonus_time", int(time.time()))
+
+                if self.config["FuelEnabled"] and (not self.get("fuel_time") or (time.time() - self.get("fuel_time")) >= 3629):
+                    await self._parse_fuel()
+                    self.set("fuel_time", int(time.time()))
+
+                if self.config["GreenhouseEnabled"] and (not self.get("greenhouse_time") or (time.time() - self.get("greenhouse_time")) >= 1212):
+                    await self._parse_greenhouse()
+                    self.set("greenhouse_time", int(time.time()))
+
+                if self.config["WastelandEnabled"] and (not self.get("wasteland_time") or (time.time() - self.get("wasteland_time")) >= 15 * 60):
+                    await self._parse_wasteland()
+                    self.set("wasteland_time", int(time.time()))
+
+                if self.config["GardenEnabled"] and (not self.get("garden_time") or (time.time() - self.get("garden_time")) >= 1212):
+                    await self._parse_garden()
+                    self.set("garden_time", int(time.time()))
+
+                if self.config["MineEnabled"] and (not self.get("mine_time") or (time.time() - self.get("mine_time")) >= self.config["MineCooldown"] * 60):
+                    await self._mine()
+                    self.set("mine_time", int(time.time()))
+
+                if self.config["GuildEnabled"]:
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Guild auto-farm placeholder")
+            except Exception as e:
+                await self.client.send_message(self._Shadow_Ultimat_channel, f"Auto-farm error: {str(e)}")
             await asyncio.sleep(60)
 
     async def _update_status_message_text(self, section: str = None) -> str:
-        """Helper to generate status message text without sending"""
+        """Helper to generate status message text"""
+        prefix = self.config["prefix"]
         status = f"📓  | Shadow_Ultimat | ~ [ v777 ]\n"
         status += "╔═╣════════════════╗\n"
         status += "║  🔻СТАТУС |💣| BFGB🔻\n"
@@ -210,26 +226,28 @@ class ShadowUltimat(loader.Module):
         status += "╠══════════════════╣\n"
         status += "║👁‍🗨 Команды:\n"
         if section in [None, "people"]:
-            status += f"╠═╣<code>.люди</code> - вкл/выкл\n"
+            status += f"╠═╣<code>{prefix}люди</code> - вкл/выкл\n"
         if section in [None, "bonus"]:
-            status += f"╠═╣<code>.бонус</code> - вкл/выкл\n"
+            status += f"╠═╣<code>{prefix}бонус</code> - вкл/выкл\n"
         if section in [None, "fuel"]:
-            status += f"╠═╣<code>.бензин</code> - вкл/выкл\n"
+            status += f"╠═╣<code>{prefix}бензин</code> - вкл/выкл\n"
         if section in [None, "greenhouse"]:
-            status += f"╠═╣<code>.2теплица</code> - вкл/выкл\n"
+            status += f"╠═╣<code>{prefix}теплица</code> - вкл/выкл\n"
         if section in [None, "wasteland"]:
-            status += f"╠═╣<code>.2пустошь</code> - вкл/выкл\n"
+            status += f"╠═╣<code>{prefix}пустошь</code> - вкл/выкл\n"
         if section in [None, "garden"]:
-            status += f"╠═╣<code>.2сад</code> - вкл/выкл\n"
+            status += f"╠═╣<code>{prefix}сад</code> - вкл/выкл\n"
         if section in [None, "mine"]:
-            status += f"╠═╣<code>.2шахта</code> - вкл/выкл\n"
+            status += f"╠═╣<code>{prefix}шахта</code> - вкл/выкл\n"
         if section in [None, "guild"]:
-            status += f"╠═╣<code>.2гильдия</code> - вкл/выкл\n"
+            status += f"╠═╣<code>{prefix}гильдия</code> - вкл/выкл\n"
+        if section in [None, "bottles"]:
+            status += f"╠═╣<code>{prefix}bottles</code> - вкл/выкл обмен бутылок\n"
+        status += f"╠═╣<code>{prefix}prefix</code> [префикс] - установить префикс\n"
         status += "╚═══════════════════"
         return status
 
     async def _update_status_message(self, message: Message, section: str = None):
-        # Buttons: 3 in first row, 2 in second row
         buttons = [
             [
                 {"text": "Теплица", "data": b"greenhouse"},
@@ -243,8 +261,9 @@ class ShadowUltimat(loader.Module):
         ] if section is None else [[{"text": "Назад", "data": b"back"}]]
 
         try:
-            await utils.answer(message, await self._update_status_message_text(section), reply_markup=buttons)
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Status message updated for section: {section or 'main'}")
+            new_message = await utils.answer(message, await self._update_status_message_text(section), reply_markup=buttons)
+            self._status_message_id = new_message.id  # Сохраняем ID сообщения
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Status message updated for section: {section or 'main'}, ID: {self._status_message_id}")
         except Exception as e:
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Failed to update status message: {str(e)}")
 
@@ -257,6 +276,7 @@ class ShadowUltimat(loader.Module):
     async def людиcmd(self, message: Message):
         """Toggle people auto-farming"""
         self._db['people']['enabled'] = not self._db['people']['enabled']
+        self.set("db", self._db)
         await utils.answer(message, f"Авто-фарм людей {'включен' if self._db['people']['enabled'] else 'выключен'}")
         await self._update_status_message(message)
 
@@ -264,6 +284,7 @@ class ShadowUltimat(loader.Module):
     async def бонусcmd(self, message: Message):
         """Toggle daily bonus collection"""
         self._db['bonus']['enabled'] = not self._db['bonus']['enabled']
+        self.set("db", self._db)
         await utils.answer(message, f"Ежедневный бонус {'включен' if self._db['bonus']['enabled'] else 'выключен'}")
         await self._update_status_message(message)
 
@@ -271,6 +292,7 @@ class ShadowUltimat(loader.Module):
     async def бензинcmd(self, message: Message):
         """Toggle fuel auto-farming"""
         self._db['fuel']['enabled'] = not self._db['fuel']['enabled']
+        self.set("db", self._db)
         await utils.answer(message, f"Авто-фарм бензина {'включен' if self._db['fuel']['enabled'] else 'выключен'}")
         await self._update_status_message(message)
 
@@ -278,6 +300,7 @@ class ShadowUltimat(loader.Module):
     async def теплицаcmd(self, message: Message):
         """Toggle greenhouse auto-farming"""
         self._db['greenhouse']['enabled'] = not self._db['greenhouse']['enabled']
+        self.set("db", self._db)
         await utils.answer(message, f"Авто-фарм теплицы {'включен' if self._db['greenhouse']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "greenhouse")
 
@@ -285,6 +308,7 @@ class ShadowUltimat(loader.Module):
     async def пустошьcmd(self, message: Message):
         """Toggle wasteland auto-farming"""
         self._db['wasteland']['enabled'] = not self._db['wasteland']['enabled']
+        self.set("db", self._db)
         await utils.answer(message, f"Авто-фарм пустоши {'включен' if self._db['wasteland']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "wasteland")
 
@@ -292,6 +316,7 @@ class ShadowUltimat(loader.Module):
     async def садcmd(self, message: Message):
         """Toggle garden auto-farming"""
         self._db['garden']['enabled'] = not self._db['garden']['enabled']
+        self.set("db", self._db)
         await utils.answer(message, f"Авто-фарм сада {'включен' if self._db['garden']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "garden")
 
@@ -299,6 +324,7 @@ class ShadowUltimat(loader.Module):
     async def шахтаcmd(self, message: Message):
         """Toggle mine auto-farming"""
         self._db['mine']['enabled'] = not self._db['mine']['enabled']
+        self.set("db", self._db)
         await utils.answer(message, f"Авто-фарм шахты {'включен' if self._db['mine']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "mine")
 
@@ -306,283 +332,327 @@ class ShadowUltimat(loader.Module):
     async def гильдияcmd(self, message: Message):
         """Toggle guild auto-farming"""
         self._db['guild']['enabled'] = not self._db['guild']['enabled']
+        self.set("db", self._db)
         await utils.answer(message, f"Авто-фарм гильдии {'включен' if self._db['guild']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "guild")
+
+    @loader.command(ru_doc="Установить префикс для команд (по умолчанию '.')")
+    async def prefixcmd(self, message: Message):
+        """Set command prefix (default '.')"""
+        args = utils.get_args_raw(message).strip()
+        if not args:
+            await utils.answer(message, f"Текущий префикс: <code>{self.config['prefix']}</code>")
+            return
+        if len(args) > 10:
+            await utils.answer(message, "Префикс слишком длинный (макс. 10 символов)")
+            return
+        self.config["prefix"] = args
+        self.set("prefix", args)
+        await utils.answer(message, f"Префикс установлен: <code>{args}</code>")
+        await self._update_status_message(message)
 
     @loader.command(ru_doc="Запустить автофарм вручную")
     async def startfarmcmd(self, message: Message):
         """Start auto-farm manually"""
         try:
-            await self._auto_farm()
+            await self._run_farm_tasks()
             await utils.answer(message, "Автофарм запущен вручную")
             await self.client.send_message(self._Shadow_Ultimat_channel, "Manual auto-farm started")
         except Exception as e:
             await utils.answer(message, f"Ошибка при запуске автофарма: {str(e)}")
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Manual auto-farm error: {str(e)}")
 
+    @loader.command(ru_doc="Автоматический обмен бутылок")
+    async def bottlescmd(self, message: Message):
+        """Toggle automatic bottle exchange"""
+        if self.get('_bottles_status'):
+            self.set('_bottles_status', False)
+            await utils.answer(message, "<b>Обмен бутылок остановлен!</b>")
+        else:
+            self.set('_bottles_status', True)
+            await utils.answer(message, "<b>Обмен бутылок запущен!</b>")
+            asyncio.create_task(self._bottle_loop(message))
+
     @loader.watcher()
     async def callback_watcher(self, message: Message):
         try:
-            if not message.reply_markup:
-                await self.client.send_message(self._Shadow_Ultimat_channel, "Watcher: No reply_markup")
+            if not message.reply_markup or message.id != self._status_message_id:
+                await self.client.send_message(self._Shadow_Ultimat_channel, f"Watcher: Ignored message {message.id}, expected {self._status_message_id}")
                 return
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Watcher triggered: {message.reply_markup}")
+
+            await self.client.send_message(self._Shadow_Ultimat_channel, f"Watcher: Processing buttons for message {message.id}")
             for row in message.reply_markup.rows:
                 for button in row.buttons:
                     if hasattr(button, 'data') and button.data in [b"greenhouse", b"wasteland", b"garden", b"mine", b"guild", b"back"]:
                         await self.client.send_message(self._Shadow_Ultimat_channel, f"Processing button: {button.data.decode()}")
-                        try:
-                            async with self._lock:
-                                if button.data == b"greenhouse":
-                                    async with self._client.conversation(self._bot) as conv:
-                                        await conv.send_message("Моя теплица")
-                                        response = await conv.get_response()
-                                        await self._parse_greenhouse(response)
-                                    await utils.answer(message, await self._update_status_message_text("greenhouse"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
-                                elif button.data == b"wasteland":
-                                    async with self._client.conversation(self._bot) as conv:
-                                        await conv.send_message("Пустошь")
-                                        response = await conv.get_response()
-                                        await self._parse_wasteland(response)
-                                    await utils.answer(message, await self._update_status_message_text("wasteland"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
-                                elif button.data == b"garden":
-                                    async with self._client.conversation(self._bot) as conv:
-                                        await conv.send_message("/garden")
-                                        response = await conv.get_response()
-                                        await self._parse_garden(response)
-                                    await utils.answer(message, await self._update_status_message_text("garden"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
-                                elif button.data == b"mine":
-                                    async with self._client.conversation(self._bot) as conv:
-                                        await conv.send_message("/mine")
-                                        response = await conv.get_response()
-                                        await self._parse_mine(response)
-                                    await utils.answer(message, await self._update_status_message_text("mine"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
-                                elif button.data == b"guild":
-                                    await utils.answer(message, await self._update_status_message_text("guild"), reply_markup=[[{"text": "Назад", "data": b"back"}]])
-                                elif button.data == b"back":
-                                    await utils.answer(message, await self._update_status_message_text(), reply_markup=[
-                                        [
-                                            {"text": "Теплица", "data": b"greenhouse"},
-                                            {"text": "Пустошь", "data": b"wasteland"},
-                                            {"text": "Сад", "data": b"garden"}
-                                        ],
-                                        [
-                                            {"text": "Шахта", "data": b"mine"},
-                                            {"text": "Гильдия", "data": b"guild"}
-                                        ]
-                                    ])
+                        async with self._lock:
+                            if button.data == b"greenhouse":
+                                await self._parse_greenhouse()
+                                await self._update_status_message(message, "greenhouse")
+                            elif button.data == b"wasteland":
+                                await self._parse_wasteland()
+                                await self._update_status_message(message, "wasteland")
+                            elif button.data == b"garden":
+                                await self._parse_garden()
+                                await self._update_status_message(message, "garden")
+                            elif button.data == b"mine":
+                                await self._parse_mine()
+                                await self._update_status_message(message, "mine")
+                            elif button.data == b"guild":
+                                await self._update_status_message(message, "guild")
+                            elif button.data == b"back":
+                                await self._update_status_message(message)
                             await self.client.send_message(self._Shadow_Ultimat_channel, f"Button {button.data.decode()} processed successfully")
-                        except Exception as e:
-                            await self.client.send_message(self._Shadow_Ultimat_channel, f"Callback error for button {button.data.decode()}: {str(e)}")
                         break
         except Exception as e:
             await self.client.send_message(self._Shadow_Ultimat_channel, f"Watcher error: {str(e)}")
 
-    async def _parse_people(self, message: Message):
-        try:
-            text = message.raw_text
-            people_match = re.search(r"Людей в бункере: (\d+)", text)
-            queue_match = re.search(r"Людей в очереди в бункер: (\d+)/(\d+)", text)
-            max_match = re.search(r"Макс\. вместимость людей: (\d+)", text)
-            if people_match and queue_match and max_match:
-                self._db['people']['count'] = int(people_match.group(1))
-                self._db['people']['queue'] = int(queue_match.group(1))
-                self._db['people']['max'] = int(max_match.group(1))
-                if self._db['people']['enabled'] and self._db['people']['queue'] > 0:
-                    async with self._lock:
-                        async with self._client.conversation(self._bot) as conv:
-                            await conv.send_message(f"Впустить {self._db['people']['max'] - self._db['people']['count']}")
-                            await conv.get_response()
-            await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed people data")
-        except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Error parsing people: {str(e)}")
-            raise
+    async def _parse_people(self):
+        async with self._lock:
+            async with self._client.conversation(self._bot) as conv:
+                await asyncio.sleep(2)
+                await conv.send_message("/me")
+                response = await conv.get_response()
+                text = response.raw_text
+                people_match = re.search(r"Людей в бункере: (\d+)", text)
+                queue_match = re.search(r"Людей в очереди в бункер: (\d+)/(\d+)", text)
+                max_match = re.search(r"Макс\. вместимость людей: (\d+)", text)
+                if people_match and queue_match and max_match:
+                    self._db['people']['count'] = int(people_match.group(1))
+                    self._db['people']['queue'] = int(queue_match.group(1))
+                    self._db['people']['max'] = int(max_match.group(1))
+                    if self._db['people']['enabled'] and self._db['people']['queue'] > 0:
+                        await asyncio.sleep(2)
+                        await conv.send_message(f"Впустить {self._db['people']['max'] - self._db['people']['count']}")
+                        await conv.get_response()
+                    self.set("db", self._db)
+                await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed people data")
 
-    async def _parse_bonus(self, message: Message):
-        try:
-            if "ежедневный бонус" in message.raw_text:
-                self._db['bonus']['last_claim'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                await self.client.send_message(self._Shadow_Ultimat_channel, "Bonus claimed")
-        except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Error parsing bonus: {str(e)}")
-            raise
+    async def _parse_bonus(self):
+        async with self._lock:
+            async with self._client.conversation(self._bot) as conv:
+                await asyncio.sleep(2)
+                await conv.send_message("/bonus")
+                response = await conv.get_response()
+                if "ежедневный бонус" in response.raw_text:
+                    self._db['bonus']['last_claim'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    self.set("db", self._db)
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Bonus claimed")
 
-    async def _parse_fuel(self, message: Message):
-        try:
-            text = message.raw_text
-            fuel_match = re.search(r"Твой текущий запас бензина: (\d+)/(\d+) л\.", text)
-            if fuel_match:
-                self._db['fuel']['current'] = int(fuel_match.group(1))
-                self._db['fuel']['max'] = int(fuel_match.group(2))
-                if message.reply_markup and self._db['fuel']['enabled']:
-                    for row in message.reply_markup.rows:
-                        for button in row.buttons:
-                            if hasattr(button, 'data') and button.data.startswith(b"buy_fuell_"):
-                                await message.click(data=button.data)
-                                await self.client.send_message(self._Shadow_Ultimat_channel, "Clicked fuel buy button")
-                                break
-        except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Error parsing fuel: {str(e)}")
-            raise
-
-    async def _parse_greenhouse(self, message: Message):
-        try:
-            text = message.raw_text
-            xp_match = re.search(r"Опыт: (\d+)", text)
-            water_match = re.search(r"Вода: (\d+)/(\d+) л\.", text)
-            crop_match = re.search(r"Тебе доступна: (\S+)", text)
-            stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
-            if xp_match and water_match and crop_match:
-                self._db['greenhouse']['xp'] = int(xp_match.group(1))
-                self._db['greenhouse']['water'] = int(water_match.group(1))
-                self._db['greenhouse']['max_water'] = int(water_match.group(2))
-                self._db['greenhouse']['crop'] = crop_match.group(1)
-                if self._db['greenhouse']['enabled'] and self._db['greenhouse']['water'] > 0:
-                    for xp_range, crop in self._resources_map.items():
-                        if self._db['greenhouse']['xp'] in xp_range and crop == self._db['greenhouse']['crop'].lower():
-                            async with self._lock:
-                                async with self._client.conversation(self._bot) as conv:
-                                    await conv.send_message(f"Вырастить {crop}")
-                                    response = await conv.get_response()
-                                    if "вырастил" in response.raw_text.lower():
-                                        self._db['greenhouse']['stock'][crop] += 1
-                                        self._db['greenhouse']['water'] -= 1
-                                        await self.client.send_message(self._Shadow_Ultimat_channel, f"Grew {crop}")
-                            break
-        except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Error parsing greenhouse: {str(e)}")
-            raise
-
-    async def _parse_wasteland(self, message: Message):
-        try:
-            text = message.raw_text
-            if "буря закончится" in text:
-                self._db['wasteland']['death_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                await self.client.send_message(self._Shadow_Ultimat_channel, "Wasteland death detected")
-            elif "Время в пустоши" in text:
-                time_match = re.search(r"Время в пустоши: ([\d\sчас\.мин\.]+)", text)
-                health_match = re.search(r"Здоровье: (\d+)%", text)
-                stimulators_match = re.search(r"Стимуляторов: (\d+) шт\.", text)
-                weapons_match = re.search(r"Оружия: (\d+) ед\.", text)
-                caps_match = re.search(r"Найдено крышек: (\d+) шт\.", text)
-                rating_match = re.search(r"Получено рейтинга: (\d+)", text)
-                if time_match and health_match and stimulators_match and weapons_match and caps_match and rating_match:
-                    self._db['wasteland']['time'] = time_match.group(1)
-                    self._db['wasteland']['health'] = int(health_match.group(1))
-                    self._db['wasteland']['stimulators'] = int(stimulators_match.group(1))
-                    self._db['wasteland']['weapons'] = int(weapons_match.group(1))
-                    self._db['wasteland']['caps'] = int(caps_match.group(1))
-                    self._db['wasteland']['rating'] = int(rating_match.group(1))
-                    self._db['wasteland']['death_date'] = None
-                    if self._db['wasteland']['health'] < 20 and message.reply_markup:
-                        for row in message.reply_markup.rows:
+    async def _parse_fuel(self):
+        async with self._lock:
+            async with self._client.conversation(self._bot) as conv:
+                await asyncio.sleep(2)
+                await conv.send_message("/fuel")
+                response = await conv.get_response()
+                text = response.raw_text
+                fuel_match = re.search(r"Твой текущий запас бензина: (\d+)/(\d+) л\.", text)
+                if fuel_match:
+                    self._db['fuel']['current'] = int(fuel_match.group(1))
+                    self._db['fuel']['max'] = int(fuel_match.group(2))
+                    if self._db['fuel']['enabled'] and response.reply_markup:
+                        await asyncio.sleep(2)
+                        for row in response.reply_markup.rows:
                             for button in row.buttons:
-                                if hasattr(button, 'data') and button.data.startswith(b"end_research_"):
-                                    await message.click(data=button.data)
-                                    await self.client.send_message(self._Shadow_Ultimat_channel, "Ended wasteland exploration")
+                                if hasattr(button, 'data') and button.data.startswith(b"buy_fuell_"):
+                                    await response.click(data=button.data)
+                                    await self.client.send_message(self._Shadow_Ultimat_channel, f"Clicked fuel buy button: {button.data.decode()}")
                                     break
-        except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Error parsing wasteland: {str(e)}")
-            raise
+                        await conv.get_response()  # Ожидаем подтверждения после нажатия
+                    self.set("db", self._db)
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed fuel data")
 
-    async def _parse_garden(self, message: Message):
-        try:
-            text = message.raw_text
-            level_match = re.search(r"Уровень: (\d+)", text)
-            status_match = re.search(r"Статус сада:\s*([\s\S]*?)(?=\n\n|$)", text)
-            stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
-            if level_match and status_match:
-                self._db['garden']['level'] = int(level_match.group(1))
-                self._db['garden']['status'] = status_match.group(1).strip()
-                if stock_match:
-                    stock_text = stock_match.group(1).strip()
-                    for fruit in self._db['garden']['stock']:
-                        amount = re.search(rf"{fruit.capitalize()} - (\d+) шт\.", stock_text)
-                        self._db['garden']['stock'][fruit] = int(amount.group(1)) if amount else 0
-                await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed garden data")
-        except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Error parsing garden: {str(e)}")
-            raise
+    async def _parse_greenhouse(self):
+        async with self._lock:
+            async with self._client.conversation(self._bot) as conv:
+                await asyncio.sleep(2)
+                await conv.send_message("Моя теплица")
+                response = await conv.get_response()
+                text = response.raw_text
+                xp_match = re.search(r"Опыт: (\d+)", text)
+                water_match = re.search(r"Вода: (\d+)/(\d+) л\.", text)
+                crop_match = re.search(r"Тебе доступна: (\S+)", text)
+                stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
+                if xp_match and water_match and crop_match:
+                    self._db['greenhouse']['xp'] = int(xp_match.group(1))
+                    self._db['greenhouse']['water'] = int(water_match.group(1))
+                    self._db['greenhouse']['max_water'] = int(water_match.group(2))
+                    self._db['greenhouse']['crop'] = crop_match.group(1)
+                    if self._db['greenhouse']['enabled'] and self._db['greenhouse']['water'] > 0:
+                        resource = next(resource for range_, resource in self._resources_map.items() if self._db['greenhouse']['xp'] in range_)
+                        while self._db['greenhouse']['water'] > 0:
+                            await asyncio.sleep(2)
+                            await conv.send_message(f"Вырастить {resource}")
+                            response = await conv.get_response()
+                            if "у тебя не хватает" in response.raw_text:
+                                break
+                            if "вырастил" in response.raw_text.lower():
+                                self._db['greenhouse']['stock'][resource] += 1
+                                self._db['greenhouse']['water'] -= 1
+                                await self.client.send_message(self._Shadow_Ultimat_channel, f"Grew {resource}")
+                    self.set("db", self._db)
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed greenhouse data")
 
-    async def _parse_mine(self, message: Message):
-        try:
-            text = message.raw_text
-            pickaxe_match = re.search(r"Кирка: ([^\n]+)", text)
-            durability_match = re.search(r"Прочность: (\d+)", text)
-            depth_match = re.search(r"Уровень погружения: (\d+) м\.", text)
-            stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
-            if pickaxe_match and durability_match and depth_match:
-                self._db['mine']['pickaxe'] = pickaxe_match.group(1)
-                self._db['mine']['durability'] = int(durability_match.group(1))
-                self._db['mine']['depth'] = int(depth_match.group(1))
-                if stock_match:
-                    stock_text = stock_match.group(1).strip()
-                    for resource in self._db['mine']['stock']:
-                        amount = re.search(rf"{resource.capitalize()} - (\d+) кг\.", stock_text)
-                        self._db['mine']['stock'][resource] = int(amount.group(1)) if amount else 0
-                if self._db['mine']['enabled'] and self._db['mine']['durability'] == 0:
-                    async with self._lock:
-                        async with self._client.conversation(self._bot) as conv:
-                            await conv.send_message("Б")
-                            m = await conv.get_response()
-                            balance = int("".join(s for s in m.raw_text.split("Баланс:")[1].split('/')[0].strip() if s.isdigit()))
-                            if balance >= 1000000:
-                                await conv.send_message("Купить алмазную кирку")
-                            elif balance >= 200000:
-                                await conv.send_message("Купить железную кирку")
-                            elif balance >= 30000:
-                                await conv.send_message("Купить каменную кирку")
-                            await conv.get_response()
-                            await self.client.send_message(self._Shadow_Ultimat_channel, "Bought pickaxe")
-        except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Error parsing mine: {str(e)}")
-            raise
-
-    async def _mine(self):
-        try:
-            async with self._lock:
-                async with self._client.conversation(self._bot) as conv:
+    async def _parse_wasteland(self):
+        async with self._lock:
+            async with self._client.conversation(self._bot) as conv:
+                if self.config["StimulatorsToBuy"] > 0:
                     await asyncio.sleep(2)
-                    await conv.send_message("копать")
-                    m = await conv.get_response()
-                    if "у тебя нет кирки" in m.raw_text:
+                    await conv.send_message(f"Купить стимуляторы {self.config['StimulatorsToBuy']}")
+                    await conv.get_response()
+                if self.config["WeaponsToBuy"] > 0:
+                    await asyncio.sleep(2)
+                    await conv.send_message(f"Купить оружие {self.config['WeaponsToBuy']}")
+                    await conv.get_response()
+                await asyncio.sleep(2)
+                await conv.send_message("Исследовать пустошь")
+                response = await conv.get_response()
+                if "укажи количество стимуляторов" in response.raw_text:
+                    stimulators = min(int(re.search(r"У тебя: (\d+)", response.raw_text).group(1)), int(re.search(r"Максимум можешь дать: (\d+)", response.raw_text).group(1)))
+                    await asyncio.sleep(2)
+                    await conv.send_message(str(stimulators))
+                    response = await conv.get_response()
+                if "укажи количество оружия" in response.raw_text:
+                    weapons = min(int(re.search(r"У тебя: (\d+)", response.raw_text).group(1)), int(re.search(r"Максимум можешь дать: (\d+)", response.raw_text).group(1)))
+                    await asyncio.sleep(2)
+                    await conv.send_message(str(weapons))
+                    response = await conv.get_response()
+                await asyncio.sleep(15 * 60)
+                await conv.send_message("Пустошь")
+                response = await conv.get_response()
+                text = response.raw_text
+                if "буря закончится" in text:
+                    self._db['wasteland']['death_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Wasteland death detected")
+                elif "Время в пустоши" in text:
+                    time_match = re.search(r"Время в пустоши: ([\d\sчас\.мин\.]+)", text)
+                    health_match = re.search(r"Здоровье: (\d+)%", text)
+                    stimulators_match = re.search(r"Стимуляторов: (\d+) шт\.", text)
+                    weapons_match = re.search(r"Оружия: (\d+) ед\.", text)
+                    caps_match = re.search(r"Найдено крышек: (\d+) шт\.", text)
+                    rating_match = re.search(r"Получено рейтинга: (\d+)", text)
+                    if time_match and health_match and stimulators_match and weapons_match and caps_match and rating_match:
+                        self._db['wasteland']['time'] = time_match.group(1)
+                        self._db['wasteland']['health'] = int(health_match.group(1))
+                        self._db['wasteland']['stimulators'] = int(stimulators_match.group(1))
+                        self._db['wasteland']['weapons'] = int(weapons_match.group(1))
+                        self._db['wasteland']['caps'] = int(caps_match.group(1))
+                        self._db['wasteland']['rating'] = int(rating_match.group(1))
+                        self._db['wasteland']['death_date'] = None
+                        if self._db['wasteland']['enabled'] and self._db['wasteland']['health'] < 20 and response.reply_markup:
+                            await asyncio.sleep(2)
+                            for row in response.reply_markup.rows:
+                                for button in row.buttons:
+                                    if hasattr(button, 'data') and button.data.startswith(b"end_research_"):
+                                        await response.click(data=button.data)
+                                        await self.client.send_message(self._Shadow_Ultimat_channel, f"Clicked wasteland end button: {button.data.decode()}")
+                                        break
+                            await conv.get_response()  # Ожидаем подтверждения после нажатия
+                        self.set("db", self._db)
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed wasteland data")
+
+    async def _parse_garden(self):
+        async with self._lock:
+            async with self._client.conversation(self._bot) as conv:
+                await asyncio.sleep(2)
+                await conv.send_message("/garden")
+                response = await conv.get_response()
+                text = response.raw_text
+                level_match = re.search(r"Уровень: (\d+)", text)
+                status_match = re.search(r"Статус сада:\s*([\s\S]*?)(?=\n\n|$)", text)
+                stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
+                if level_match and status_match:
+                    self._db['garden']['level'] = int(level_match.group(1))
+                    self._db['garden']['status'] = status_match.group(1).strip()
+                    if stock_match:
+                        stock_text = stock_match.group(1).strip()
+                        for fruit in self._db['garden']['stock']:
+                            amount = re.search(rf"{fruit.capitalize()} - (\d+) шт\.", stock_text)
+                            self._db['garden']['stock'][fruit] = int(amount.group(1)) if amount else 0
+                    self.set("db", self._db)
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed garden data")
+
+    async def _parse_mine(self):
+        async with self._lock:
+            async with self._client.conversation(self._bot) as conv:
+                await asyncio.sleep(2)
+                await conv.send_message("/mine")
+                response = await conv.get_response()
+                text = response.raw_text
+                pickaxe_match = re.search(r"Кирка: ([^\n]+)", text)
+                durability_match = re.search(r"Прочность: (\d+)", text)
+                depth_match = re.search(r"Уровень погружения: (\d+) м\.", text)
+                stock_match = re.search(r"Твой склад:([\s\S]*?)(?=\n\n|$)", text)
+                if pickaxe_match and durability_match and depth_match:
+                    self._db['mine']['pickaxe'] = pickaxe_match.group(1)
+                    self._db['mine']['durability'] = int(durability_match.group(1))
+                    self._db['mine']['depth'] = int(depth_match.group(1))
+                    if stock_match:
+                        stock_text = stock_match.group(1).strip()
+                        for resource in self._db['mine']['stock']:
+                            amount = re.search(rf"{resource.capitalize()} - (\d+) кг\.", stock_text)
+                            self._db['mine']['stock'][resource] = int(amount.group(1)) if amount else 0
+                    if self._db['mine']['enabled'] and self._db['mine']['durability'] == 0:
                         await asyncio.sleep(2)
                         await conv.send_message("Б")
                         m = await conv.get_response()
                         balance = int("".join(s for s in m.raw_text.split("Баланс:")[1].split('/')[0].strip() if s.isdigit()))
-                        if balance < 30000:
-                            await self.client.send_message(self._Shadow_Ultimat_channel, "Insufficient balance for pickaxe")
-                            return
-                        await asyncio.sleep(2)
                         if balance >= 1000000:
                             await conv.send_message("Купить алмазную кирку")
                         elif balance >= 200000:
                             await conv.send_message("Купить железную кирку")
-                        else:
+                        elif balance >= 30000:
                             await conv.send_message("Купить каменную кирку")
                         await conv.get_response()
-                        await asyncio.sleep(2)
-                        await conv.send_message("копать")
-                        m = await conv.get_response()
+                        await self.client.send_message(self._Shadow_Ultimat_channel, "Bought pickaxe")
+                    self.set("db", self._db)
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Parsed mine data")
 
-                    if 'отдохнёт' in m.raw_text:
-                        await self.client.send_message(self._Shadow_Ultimat_channel, "Mining cooldown active")
+    async def _mine(self):
+        async with self._lock:
+            async with self._client.conversation(self._bot) as conv:
+                await asyncio.sleep(2)
+                await conv.send_message("копать")
+                m = await conv.get_response()
+                if "у тебя нет кирки" in m.raw_text:
+                    await asyncio.sleep(2)
+                    await conv.send_message("Б")
+                    m = await conv.get_response()
+                    balance = int("".join(s for s in m.raw_text.split("Баланс:")[1].split('/')[0].strip() if s.isdigit()))
+                    if balance < 30000:
+                        await self.client.send_message(self._Shadow_Ultimat_channel, "Insufficient balance for pickaxe")
                         return
+                    await asyncio.sleep(2)
+                    if balance >= 1000000:
+                        await conv.send_message("Купить алмазную кирку")
+                    elif balance >= 200000:
+                        await conv.send_message("Купить железную кирку")
+                    else:
+                        await conv.send_message("Купить каменную кирку")
+                    await conv.get_response()
+                    await asyncio.sleep(2)
+                    await conv.send_message("копать")
+                    m = await conv.get_response()
 
-                    resources_result = m.raw_text.split("ты нашёл")
-                    resources = 'Воздух'
-                    if len(resources_result) > 1:
-                        resources_text = resources_result[1].split(' ')[1:]
-                        resources = ' '.join(resources_text).split('.')[0]
+                if 'отдохнёт' in m.raw_text:
+                    await self.client.send_message(self._Shadow_Ultimat_channel, "Mining cooldown active")
+                    return
 
-                    probability_result = m.raw_text.split("вероятностью")
-                    probability = 0
-                    if len(probability_result) > 1:
-                        probability_text = probability_result[1]
-                        probability = int("".join(s for s in probability_text.split('%')[0].strip() if s.isdigit()))
+                resources_result = m.raw_text.split("ты нашёл")
+                resources = 'Воздух'
+                if len(resources_result) > 1:
+                    resources_text = resources_result[1].split(' ')[1:]
+                    resources = ' '.join(resources_text).split('.')[0]
 
-                    if self.config["MineDiamond"] and ("ты нашёл 💎 Алмаз." in m.message or probability == 100):
-                        await asyncio.sleep(2)
+                probability_result = m.raw_text.split("вероятностью")
+                probability = 0
+                if len(probability_result) > 1:
+                    probability_text = probability_result[1]
+                    probability = int("".join(s for s in probability_text.split('%')[0].strip() if s.isdigit()))
+
+                if self._db['mine']['enabled'] and m.reply_markup:
+                    await asyncio.sleep(2)
+                    if self.config["MineDiamond"] and ("ты нашёл 💎 Алмаз." in m.raw_text or probability == 100):
                         await m.click(0)
                         m = await conv.get_edit()
                         if "Прочность твоей кирки уменьшена" in m.text:
@@ -590,11 +660,9 @@ class ShadowUltimat(loader.Module):
                         else:
                             await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
                     elif self.config["SkipNonUranium"] and "Уран" not in resources:
-                        await asyncio.sleep(2)
                         await m.click(1)
                         await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты пропустил {resources} с шансом {probability}%\n#Пропуск")
                     elif self.config["MineProbability"] and 80 <= probability <= 100:
-                        await asyncio.sleep(2)
                         await m.click(0)
                         m = await conv.get_edit()
                         if "Прочность твоей кирки уменьшена" in m.text:
@@ -602,95 +670,81 @@ class ShadowUltimat(loader.Module):
                         else:
                             await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
                     else:
-                        await asyncio.sleep(2)
                         await m.click(0)
                         m = await conv.get_edit()
                         if "Прочность твоей кирки уменьшена" in m.text:
                             await self.client.send_message(self._Shadow_Ultimat_channel, "Прочность кирки уменьшена\n#Прочность")
                         else:
                             await self.client.send_message(self._Shadow_Ultimat_channel, f"Ты добыл {resources} с шансом {probability}%\n#Добыча")
-        except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Error in mining: {str(e)}")
-            raise
 
-    async def _auto_farm(self):
-        try:
-            await self.client.send_message(self._Shadow_Ultimat_channel, "Auto-farm loop running")
-            async with self._lock:
-                if self._db['people']['enabled']:
-                    async with self._client.conversation(self._bot) as conv:
-                        await conv.send_message("/me")
-                        response = await conv.get_response()
-                        await self._parse_people(response)
-                    await asyncio.sleep(2)
-
-                if self._db['bonus']['enabled']:
-                    last_claim = self._db['bonus']['last_claim']
-                    if last_claim:
-                        last_claim = datetime.strptime(last_claim, "%Y-%m-%d %H:%M:%S")
-                    if not last_claim or (datetime.now() - last_claim) >= timedelta(hours=24):
+    async def _bottle_loop(self, message: Message):
+        bottle_check_interval = 30 * 60
+        last_bottle_check = 0
+        message_count = 0
+        while self.get('_bottles_status'):
+            try:
+                current_time = time.time()
+                async with self._lock:
+                    if current_time - last_bottle_check >= bottle_check_interval:
                         async with self._client.conversation(self._bot) as conv:
-                            await conv.send_message("/bonus")
+                            await asyncio.sleep(2)
+                            await conv.send_message("Б")
                             response = await conv.get_response()
-                            await self._parse_bonus(response)
-                    await asyncio.sleep(2)
+                            bottles = int("".join(filter(str.isdigit, response.raw_text.split("Бутылок:")[1].split()[0].strip())))
+                            self._db['bottles'] = bottles
+                            max_balance = int("".join(filter(str.isdigit, response.raw_text.split("Баланс:")[1].split("/")[1].strip())))
+                            self._db['max_balance'] = max_balance
+                            self.set("db", self._db)
+                            await self.client.send_message(self._Shadow_Ultimat_channel, f"Checked bottles: {bottles}, max balance: {max_balance}")
+                            last_bottle_check = current_time
 
-                if self._db['fuel']['enabled']:
+                    await asyncio.sleep(2)
                     async with self._client.conversation(self._bot) as conv:
-                        await conv.send_message("/fuel")
-                        response = await conv.get_response()
-                        await self._parse_fuel(response)
-                    await asyncio.sleep(2)
+                        await conv.send_message("пополнить бутылки максимум")
+                        message_count += 1
+                        await asyncio.sleep(self.config["BottlesTime"])
 
-                if self._db['greenhouse']['enabled']:
-                    async with self._client.conversation(self._bot) as conv:
-                        await conv.send_message("Моя теплица")
-                        response = await conv.get_response()
-                        await self._parse_greenhouse(response)
-                    await asyncio.sleep(2)
+                    if self._db['bottles'] <= 0:
+                        self.set('_bottles_status', False)
+                        await utils.answer(message, "<b>Обмен бутылок остановлен из-за недостатка бутылок!</b>")
+                        return
 
-                if self._db['wasteland']['enabled'] and not self._db['wasteland']['death_date']:
-                    async with self._client.conversation(self._bot) as conv:
-                        if self.config["StimulatorsToBuy"] > 0:
-                            await conv.send_message(f"Купить стимуляторы {self.config['StimulatorsToBuy']}")
-                            await conv.get_response()
-                            await asyncio.sleep(2)
-                        if self.config["WeaponsToBuy"] > 0:
-                            await conv.send_message(f"Купить оружие {self.config['WeaponsToBuy']}")
-                            await conv.get_response()
-                            await asyncio.sleep(2)
-                        await conv.send_message("Исследовать пустошь")
-                        response = await conv.get_response()
-                        if "укажи количество стимуляторов" in response.raw_text:
-                            stimulators = min(int(re.search(r"У тебя: (\d+)", response.raw_text).group(1)), int(re.search(r"Максимум можешь дать: (\d+)", response.raw_text).group(1)))
-                            await conv.send_message(str(stimulators))
-                            response = await conv.get_response()
-                            await asyncio.sleep(2)
-                        if "укажи количество оружия" in response.raw_text:
-                            weapons = min(int(re.search(r"У тебя: (\d+)", response.raw_text).group(1)), int(re.search(r"Максимум можешь дать: (\d+)", response.raw_text).group(1)))
-                            await conv.send_message(str(weapons))
-                            await conv.get_response()
-                            await asyncio.sleep(2)
-                        await asyncio.sleep(15 * 60)  # Check every 15 minutes
-                        await conv.send_message("Пустошь")
-                        response = await conv.get_response()
-                        await self._parse_wasteland(response)
-                    await asyncio.sleep(2)
+                    if message_count >= self.config['MessageCount']:
+                        await self.client.send_message(self._Shadow_Ultimat_channel, "Protection pause: stopping for 2 minutes")
+                        await asyncio.sleep(120)
+                        message_count = 0
+            except Exception as e:
+                await self.client.send_message(self._Shadow_Ultimat_channel, f"Bottle loop error: {str(e)}")
+        await utils.answer(message, "<b>Обмен бутылок остановлен!</b>")
 
-                if self._db['garden']['enabled']:
-                    async with self._client.conversation(self._bot) as conv:
-                        await conv.send_message("/garden")
-                        response = await conv.get_response()
-                        await self._parse_garden(response)
+    async def _run_farm_tasks(self):
+        """Run all farm tasks manually"""
+        async with self._lock:
+            if self._db['people']['enabled']:
+                await self._parse_people()
+                await asyncio.sleep(2)
+            if self._db['bonus']['enabled']:
+                last_claim = self._db['bonus']['last_claim']
+                if last_claim:
+                    last_claim = datetime.strptime(last_claim, "%Y-%m-%d %H:%M:%S")
+                if not last_claim or (datetime.now() - last_claim) >= timedelta(hours=24):
+                    await self._parse_bonus()
                     await asyncio.sleep(2)
-
-                if self._db['mine']['enabled']:
-                    await self._mine()
-                    await asyncio.sleep(self.config["MineCooldown"] * 60)
-
-                if self._db['guild']['enabled']:
-                    await self.client.send_message(self._Shadow_Ultimat_channel, "Guild auto-farm placeholder")
-                    await asyncio.sleep(2)
-        except Exception as e:
-            await self.client.send_message(self._Shadow_Ultimat_channel, f"Auto-farm error: {str(e)}")
-            raise
+            if self._db['fuel']['enabled']:
+                await self._parse_fuel()
+                await asyncio.sleep(2)
+            if self._db['greenhouse']['enabled']:
+                await self._parse_greenhouse()
+                await asyncio.sleep(2)
+            if self._db['wasteland']['enabled'] and not self._db['wasteland']['death_date']:
+                await self._parse_wasteland()
+                await asyncio.sleep(2)
+            if self._db['garden']['enabled']:
+                await self._parse_garden()
+                await asyncio.sleep(2)
+            if self._db['mine']['enabled']:
+                await self._mine()
+                await asyncio.sleep(2)
+            if self._db['guild']['enabled']:
+                await self.client.send_message(self._Shadow_Ultimat_channel, "Guild auto-farm placeholder")
+                await asyncio.sleep(2)
