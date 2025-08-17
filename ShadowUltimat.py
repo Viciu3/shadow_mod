@@ -74,23 +74,23 @@ class ShadowUltimat(loader.Module):
             "bonus": self.pointer("bonus", {"enabled": True, "last_claim": None}),
             "fuel": self.pointer("fuel", {"enabled": True, "current": 0, "max": 0}),
             "greenhouse": self.pointer("greenhouse", {
-                "enabled": True, "xp": 0, "water": 0, "max_water": 0, "crop": "", 
+                "enabled": True, "xp": 0, "water": 0, "max_water": 0, "crop": "",
                 "stock": {"картошка": 0, "морковь": 0, "рис": 0, "свекла": 0, "огурец": 0, "фасоль": 0, "помидор": 0}
             }),
             "wasteland": self.pointer("wasteland", {
-                "enabled": True, "time": "0 час. 0 мин.", "health": 100, "stimulators": 0, "weapons": 0, 
+                "enabled": True, "time": "0 час. 0 мин.", "health": 100, "stimulators": 0, "weapons": 0,
                 "caps": 0, "rating": 0, "death_date": None
             }),
             "garden": self.pointer("garden", {
-                "enabled": True, "level": 1, "status": "Пустует", 
+                "enabled": True, "level": 1, "status": "Пустует",
                 "stock": {"яблоко": 0, "черешня": 0, "персик": 0, "мандарин": 0}
             }),
             "mine": self.pointer("mine", {
-                "enabled": True, "pickaxe": "Нет кирки", "durability": 0, "depth": 0, 
+                "enabled": True, "pickaxe": "Нет кирки", "durability": 0, "depth": 0,
                 "stock": {"песок": 0, "уголь": 0, "железо": 0, "медь": 0, "серебро": 0, "алмаз": 0, "уран": 0}
             }),
             "guild": self.pointer("guild", {
-                "enabled": True, "auto_banks": False, "auto_bottles": False, 
+                "enabled": True, "auto_banks": False, "auto_bottles": False,
                 "auto_guild_attack": False, "auto_boss_attack": False, "auto_purchase": False
             })
         }
@@ -117,7 +117,7 @@ class ShadowUltimat(loader.Module):
         status += "╔═╣════════════════╗\n"
         status += "║  🔻СТАТУС |💣| BFGB🔻\n"
         status += "╠══════════════════╣\n"
-        
+
         if section in [None, "people"]:
             status += f"║~$ 👫 Люди: {self.strings['status_on'] if self._db['people']['enabled'] else self.strings['status_off']}\n"
         if section in [None, "bonus"]:
@@ -203,13 +203,13 @@ class ShadowUltimat(loader.Module):
 
         buttons = [
             [
-                {"text": "Теплица", "callback_data": "greenhouse"},
-                {"text": "Пустошь", "callback_data": "wasteland"},
-                {"text": "Сад", "callback_data": "garden"},
-                {"text": "Шахта", "callback_data": "mine"},
-                {"text": "Гильдия", "callback_data": "guild"}
+                {"text": "Теплица", "data": b"greenhouse"},
+                {"text": "Пустошь", "data": b"wasteland"},
+                {"text": "Сад", "data": b"garden"},
+                {"text": "Шахта", "data": b"mine"},
+                {"text": "Гильдия", "data": b"guild"}
             ]
-        ] if section is None else [[{"text": "Назад", "callback_data": "back"}]]
+        ] if section is None else [[{"text": "Назад", "data": b"back"}]]
 
         await utils.answer(message, status, reply_markup=buttons)
 
@@ -274,51 +274,48 @@ class ShadowUltimat(loader.Module):
         await utils.answer(message, f"Авто-фарм гильдии {'включен' if self._db['guild']['enabled'] else 'выключен'}")
         await self._update_status_message(message, "guild")
 
-    @loader.on(loader.CallbackQuery("greenhouse"))
-    async def greenhouse_callback(self, call):
-        async with self._client.conversation(self._bot) as conv:
-            await conv.send_message("Моя теплица")
-            response = await conv.get_response()
-            await self._parse_greenhouse(response)
-        await self._update_status_message(call.message, "greenhouse")
-        await call.answer()
-
-    @loader.on(loader.CallbackQuery("wasteland"))
-    async def wasteland_callback(self, call):
-        async with self._client.conversation(self._bot) as conv:
-            await conv.send_message("Пустошь")
-            response = await conv.get_response()
-            await self._parse_wasteland(response)
-        await self._update_status_message(call.message, "wasteland")
-        await call.answer()
-
-    @loader.on(loader.CallbackQuery("garden"))
-    async def garden_callback(self, call):
-        async with self._client.conversation(self._bot) as conv:
-            await conv.send_message("/garden")
-            response = await conv.get_response()
-            await self._parse_garden(response)
-        await self._update_status_message(call.message, "garden")
-        await call.answer()
-
-    @loader.on(loader.CallbackQuery("mine"))
-    async def mine_callback(self, call):
-        async with self._client.conversation(self._bot) as conv:
-            await conv.send_message("/mine")
-            response = await conv.get_response()
-            await self._parse_mine(response)
-        await self._update_status_message(call.message, "mine")
-        await call.answer()
-
-    @loader.on(loader.CallbackQuery("guild"))
-    async def guild_callback(self, call):
-        await self._update_status_message(call.message, "guild")
-        await call.answer()
-
-    @loader.on(loader.CallbackQuery("back"))
-    async def back_callback(self, call):
-        await self._update_status_message(call.message)
-        await call.answer()
+    @loader.watcher(only_inline=True)
+    async def callback_watcher(self, message: Message):
+        if not message.is_inline or not message.reply_markup:
+            return
+        for row in message.reply_markup.rows:
+            for button in row.buttons:
+                if hasattr(button, 'data') and button.data in [b"greenhouse", b"wasteland", b"garden", b"mine", b"guild", b"back"]:
+                    if button.data == b"greenhouse":
+                        async with self._client.conversation(self._bot) as conv:
+                            await conv.send_message("Моя теплица")
+                            response = await conv.get_response()
+                            await self._parse_greenhouse(response)
+                        await self._update_status_message(message, "greenhouse")
+                        await message.answer()
+                    elif button.data == b"wasteland":
+                        async with self._client.conversation(self._bot) as conv:
+                            await conv.send_message("Пустошь")
+                            response = await conv.get_response()
+                            await self._parse_wasteland(response)
+                        await self._update_status_message(message, "wasteland")
+                        await message.answer()
+                    elif button.data == b"garden":
+                        async with self._client.conversation(self._bot) as conv:
+                            await conv.send_message("/garden")
+                            response = await conv.get_response()
+                            await self._parse_garden(response)
+                        await self._update_status_message(message, "garden")
+                        await message.answer()
+                    elif button.data == b"mine":
+                        async with self._client.conversation(self._bot) as conv:
+                            await conv.send_message("/mine")
+                            response = await conv.get_response()
+                            await self._parse_mine(response)
+                        await self._update_status_message(message, "mine")
+                        await message.answer()
+                    elif button.data == b"guild":
+                        await self._update_status_message(message, "guild")
+                        await message.answer()
+                    elif button.data == b"back":
+                        await self._update_status_message(message)
+                        await message.answer()
+                    break
 
     async def _parse_people(self, message: Message):
         text = message.raw_text
@@ -347,7 +344,7 @@ class ShadowUltimat(loader.Module):
             if message.reply_markup and self._db['fuel']['enabled']:
                 for row in message.reply_markup.rows:
                     for button in row.buttons:
-                        if button.data.startswith(b"buy_fuell_"):
+                        if hasattr(button, 'data') and button.data.startswith(b"buy_fuell_"):
                             await message.click(data=button.data)
                             break
 
@@ -395,7 +392,7 @@ class ShadowUltimat(loader.Module):
                 if self._db['wasteland']['health'] < 20 and message.reply_markup:
                     for row in message.reply_markup.rows:
                         for button in row.buttons:
-                            if button.data.startswith(b"end_research_"):
+                            if hasattr(button, 'data') and button.data.startswith(b"end_research_"):
                                 await message.click(data=button.data)
                                 break
 
