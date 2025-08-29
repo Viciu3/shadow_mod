@@ -42,7 +42,7 @@ class ShadowMute(loader.Module):
 
     def __init__(self):
         self.allowed_chats = set()
-        self.muted_users = {}  # {chat_id: {user_id: until_datetime}}
+        self.muted_users = {}
 
     @loader.command(ru_doc="Добавить/удалить текущий чат из списка разрешенных для мута.")
     async def shaddchat(self, message: Message):
